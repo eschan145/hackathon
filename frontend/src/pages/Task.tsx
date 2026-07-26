@@ -93,34 +93,34 @@ export default function Task() {
       }),
     );
     handlers.push(
-      subscribe("STEP_STARTED", (e: AssistantEvent) => {
+      subscribe("step_started", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         upsertStep(e.payload.step_id as string, e.payload.description as string, "running");
         maybeUpdatePreview(e);
       }),
     );
     handlers.push(
-      subscribe("STEP_VERIFIED", (e: AssistantEvent) => {
+      subscribe("step_verified", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         upsertStep(e.payload.step_id as string, undefined, "verified");
         maybeUpdatePreview(e);
       }),
     );
     handlers.push(
-      subscribe("STEP_FAILED", (e: AssistantEvent) => {
+      subscribe("step_failed", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         upsertStep(e.payload.step_id as string, undefined, "failed");
         maybeUpdatePreview(e);
       }),
     );
     handlers.push(
-      subscribe("REPLANNED", (e: AssistantEvent) => {
+      subscribe("replanned", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         setStatusText("Replanning after failure...");
       }),
     );
     handlers.push(
-      subscribe("APPROVAL_REQUIRED", (e: AssistantEvent) => {
+      subscribe("approval_required", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         const stepId = e.payload.step_id as string;
         const description =
@@ -129,13 +129,13 @@ export default function Task() {
       }),
     );
     handlers.push(
-      subscribe("TASK_COMPLETED", (e: AssistantEvent) => {
+      subscribe("task_completed", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         setStatusText((e.payload.summary as string) || "Task completed.");
       }),
     );
     handlers.push(
-      subscribe("TASK_FAILED", (e: AssistantEvent) => {
+      subscribe("task_failed", (e: AssistantEvent) => {
         if (activeTaskId && e.task_id !== activeTaskId) return;
         setStatusText(`Task failed: ${(e.payload.reason as string) || "unknown"}`);
       }),
