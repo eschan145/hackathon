@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, SettingsPayload } from "../api/client";
 
 const DEFAULT_SETTINGS: SettingsPayload = {
-  model: "claude-cli/claude-sonnet-5",
+  model: "ollama/qwen3-vl:30b-a3b",
   thinking_level: "low",
   show_reasoning: true,
   allowed_directories: [],
@@ -67,21 +67,14 @@ export default function Settings() {
 
       <div className="settings-section panel">
         <div className="settings-row">
-          <span
-            className="label"
-            title="OpenClaw model id (see `openclaw models list`); swap for a locally-imported model later without code changes"
-          >
+          <span className="label" title="Fixed: this project only runs the local Qwen model, no cloud models">
             Model
           </span>
-          <input
-            type="text"
-            value={settings.model}
-            onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))}
-          />
+          <input type="text" value={settings.model} readOnly disabled />
         </div>
         <div className="field-hint">
-          OpenClaw model id (see <code>openclaw models list</code>); swap for a locally-imported
-          model later without code changes.
+          Fixed to the local Qwen model served on this machine. This project does not support
+          cloud models.
         </div>
 
         <div className="settings-row">

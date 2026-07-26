@@ -16,6 +16,7 @@ handled here — it's delegated to integrations/ (owned by another agent).
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -23,6 +24,60 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 from execution.audit_log import log_action
 from execution.file_ops import FileOps
+
+_XDOTOOL_TIMEOUT = 5
+
+_BUTTON_ALIASES: dict[str, str] = {
+    "left": "1",
+    "middle": "2",
+    "right": "3",
+}
+
+
+def _run_xdotool(args: list[str]) -> bool:
+    """Run an `xdotool` subcommand, returning True iff it exited 0.
+
+    Mirrors `vision.windows._run`'s subprocess style (fixed timeout, no
+    exception ever escapes, degrade-to-failure on any error) but these
+    callers are fire-and-forget input-injection commands with no useful
+    stdout, so this just reports success/failure rather than returning text.
+    """
+    try:
+        result = subprocess.run(
+            ["xdotool", *args],
+            capture_output=True,
+            text=True,
+            timeout=_XDOTOOL_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _get_mouse_location() -> Optional[dict[str, int]]:
+    """Current real (global) pointer position, via `xdotool getmouselocation --shell`."""
+    try:
+        result = subprocess.run(
+            ["xdotool", "getmouselocation", "--shell"],
+            capture_output=True,
+            text=True,
+            timeout=_XDOTOOL_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+
+    values: dict[str, int] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, _, raw_value = line.partition("=")
+        try:
+            values[key.strip()] = int(raw_value.strip())
+        except ValueError:
+            continue
+    return values if "X" in values and "Y" in values else None
 
 
 # pyautogui's actual key-name vocabulary (pyautogui.KEYBOARD_KEYS) is a
@@ -92,6 +147,12 @@ class ControlBackend(Protocol):
     def press_keys(self, keys: list[str]) -> bool: ...
 
     def scroll(self, direction: str, amount: int) -> bool: ...
+
+    def click_window(self, window_id: str, x: int, y: int, button: str = "left") -> bool: ...
+
+    def type_text_window(self, window_id: str, text: str) -> bool: ...
+
+    def key_window(self, window_id: str, keys: str) -> bool: ...
 
 
 # ---------------------------------------------------------------------------

@@ -19,8 +19,6 @@ the entire contract the Orchestrator relies on. This class:
 
 from __future__ import annotations
 
-import time
-from pathlib import Path
 from typing import Any, Optional
 
 from core.models import ActionResult, Step, Task
@@ -28,8 +26,6 @@ from execution.audit_log import log_action
 from execution.interpreter import ActionInterpreter
 from execution.screen_state_cache import get_screen_state
 from planning.action_dsl import Action
-
-SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "screenshots"
 
 
 class ActionExecutor:
@@ -63,7 +59,7 @@ class ActionExecutor:
 
         result = await self.interpreter.execute(action, screen_state)
 
-        screenshot_ref = self._capture_screenshot(task.id, step.id)
+        screenshot_ref = self._capture_screenshot()
         a11y_snapshot = self._capture_a11y_snapshot()
 
         merged_details = {**details, **result.details}
@@ -84,19 +80,20 @@ class ActionExecutor:
     # -- helpers -----------------------------------------------------------
 
     @staticmethod
-    def _capture_screenshot(task_id: str, step_id: str) -> Optional[str]:
+    def _capture_screenshot() -> Optional[str]:
         try:
-            from vision.capture import capture_screen
+            from vision.capture import capture_screen, default_frame_store
         except ImportError:
             return None
 
         try:
             image = capture_screen()
-            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-            ref = SCREENSHOT_DIR / f"{task_id}_{step_id}_{int(time.time() * 1000)}.png"
-            if hasattr(image, "save"):
-                image.save(ref)
-            return str(ref)
+            # Bare ref_id via the shared FrameStore (same convention
+            # vision/screen_state.py uses for pre-action captures), not a
+            # standalone path — backend/main.py's _event_to_message()
+            # rebuilds the /api/frames URL from a bare ref_id, and
+            # StaticFiles serves default_frame_store.directory specifically.
+            return default_frame_store.save(image)
         except Exception:
             return None
 

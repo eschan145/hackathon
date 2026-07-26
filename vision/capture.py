@@ -10,12 +10,14 @@ against pre-action state without re-capturing (section 9, "shared cache").
 from __future__ import annotations
 
 import os
+import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 try:
     import mss  # type: ignore
@@ -68,6 +70,42 @@ def capture_active_window() -> Image.Image:
     """
     region = _active_window_region()
     return capture_screen(region)
+
+
+_IMPORT_TIMEOUT = 10
+
+
+def capture_window(window_id: str) -> Optional[Image.Image]:
+    """Capture one window's contents via `import -window <id>`, reading its
+    composited off-screen pixmap so occluded windows capture correctly
+    without being raised/focused. Accepts WindowInfo.id as-is (decimal or
+    0x-hex both work). Returns None on failure; note a bad window id makes
+    `import` exit 0 and silently fall back to the focused window, reporting
+    the real error only on stderr — so any stderr output counts as failure.
+    """
+    fd, tmp_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        try:
+            result = subprocess.run(
+                ["import", "-window", window_id, tmp_path],
+                capture_output=True,
+                timeout=_IMPORT_TIMEOUT,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0 or result.stderr.strip():
+            return None
+        try:
+            with Image.open(tmp_path) as img:
+                return img.copy()
+        except (UnidentifiedImageError, OSError):
+            return None
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 class FrameStore:

@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover
 
 from core.events import Event, EventType
 from core.models import Task
-from planning.openclaw_client import get_model_status
+from planning.openclaw_client import LOCAL_MODEL_ID, get_model_status
 from vision.capture import default_frame_store
 
 from backend.orchestrator_factory import build_orchestrator
@@ -64,7 +64,7 @@ PORT = 8765
 SETTINGS_PATH = _PROJECT_ROOT / "config" / "user_settings.yaml"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "model": "claude-cli/claude-sonnet-5",
+    "model": "ollama/qwen3-vl:30b-a3b",
     "thinking_level": "low",
     "show_reasoning": True,
     "allowed_directories": [
@@ -290,6 +290,14 @@ def create_app() -> FastAPI:
 
     @app.post("/api/settings", response_model=SettingsModel)
     async def save_settings(settings: SettingsModel) -> SettingsModel:
+        if settings.model != LOCAL_MODEL_ID:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Only the local model {LOCAL_MODEL_ID!r} is supported; "
+                    "this project does not support cloud models."
+                ),
+            )
         SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         data = settings.model_dump()
         if _YAML_AVAILABLE:

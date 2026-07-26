@@ -26,10 +26,19 @@ import yaml
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 
+# This project runs exclusively against the local Qwen3-VL model served by
+# Ollama (see run.sh's setup_local_models()) — no cloud model is ever an
+# acceptable substitute (a core hackathon requirement: all computing must
+# be done locally on the NVIDIA DGX Spark). Enforced in
+# OpenClawModelClient.__init__ below rather than left as just a default,
+# so a stray config edit can't silently start routing completions to a
+# cloud provider through OpenClaw's own catalog.
+LOCAL_MODEL_ID = "ollama/qwen3-vl:30b-a3b"
+
 _DEFAULTS: dict[str, Any] = {
-    "model": "claude-cli/claude-sonnet-5",
+    "model": LOCAL_MODEL_ID,
     "thinking": "low",
-    "timeout_seconds": 90,
+    "timeout_seconds": 120,
     "reasoning_visible": True,
 }
 
@@ -69,6 +78,13 @@ class OpenClawModelClient:
         self.config_path = Path(config_path)
         cfg = _load_config(self.config_path)
         self.model: str = str(cfg["model"])
+        if self.model != LOCAL_MODEL_ID:
+            raise RuntimeError(
+                f"Refusing to use model {self.model!r}: this project only ever runs "
+                f"the local model {LOCAL_MODEL_ID!r} (config/models.yaml). Cloud models "
+                f"are not supported — fix config/models.yaml instead of pointing it "
+                f"elsewhere."
+            )
         self.thinking: str = str(cfg["thinking"])
         self.timeout_seconds: float = float(cfg["timeout_seconds"])
         self.reasoning_visible: bool = bool(cfg["reasoning_visible"])

@@ -40,7 +40,7 @@ class CancelResponse(BaseModel):
 
 
 class SettingsModel(BaseModel):
-    model: str = "claude-cli/claude-sonnet-5"
+    model: str = "ollama/qwen3-vl:30b-a3b"
     thinking_level: str = "low"
     show_reasoning: bool = True
     allowed_directories: list[str] = Field(default_factory=list)

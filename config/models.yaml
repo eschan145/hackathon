@@ -3,10 +3,11 @@
 # as a stateless completion runner, for both action-decision text turns
 # and (rarely) multimodal grounding fallback (same model, text+image).
 #
-# To use a locally-imported model later: change `model` to whatever id
-# `openclaw models list` shows for it (e.g. an Ollama/GGUF entry) — no
-# code changes needed.
-model: "claude-cli/claude-sonnet-5"
+# Local model: Qwen3-VL 30B-A3B served by Ollama (run.sh's setup_local_models()
+# starts `ollama serve` and registers it with OpenClaw's native ollama provider).
+# To use a different model: `ollama pull <model>`, then change `model` to
+# whatever id `openclaw models list` shows for it.
+model: "ollama/qwen3-vl:30b-a3b"
 thinking: "low"              # off|minimal|low|medium|high|xhigh|adaptive|max
-timeout_seconds: 90
+timeout_seconds: 120
 reasoning_visible: true      # ask the model to emit brief `# ...` reasoning lines
