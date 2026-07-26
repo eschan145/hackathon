@@ -20,11 +20,14 @@ backends:
 
   openclaw:
     class: "execution.control_backend.OpenClawBackend"
-    enabled: false          # flip true once `pip install openclaw` is done
-    # options passed to OpenClawBackend.__init__ as **kwargs, e.g. model name,
-    # confidence threshold, grounding endpoint.
+    enabled: true           # real integration: local `openclaw` CLI + Gateway + paired node
+    # options passed to OpenClawBackend.__init__ as **kwargs.
+    # agent_id must match an id from `openclaw agents list` (this machine: "main").
     options:
       confidence_threshold: 0.6
+      agent_id: "main"
+      cli_path: "openclaw"
+      timeout_seconds: 120
 
   nemoclaw:
     class: "execution.control_backend.NemoClawBackend"

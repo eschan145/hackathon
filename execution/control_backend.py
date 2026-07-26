@@ -249,48 +249,171 @@ class _AgenticBackendBase:
 
 
 class OpenClawBackend(_AgenticBackendBase):
-    """Adapter for the `openclaw` agentic computer-control package.
+    """Adapter for the locally installed `openclaw` CLI/gateway.
 
-    # TODO: pip install openclaw; replace stub call below with the real SDK.
-    Expected real shape (per project README, subject to change once the
-    package is actually vendored):
+    OpenClaw here is not a Python SDK — it's a CLI (`openclaw`) fronting a
+    local WebSocket Gateway (`openclaw gateway`) plus a paired "node host"
+    running on this machine (`openclaw node run`) that exposes real system
+    capabilities (`system.run`/`exec`, `browser.proxy`, `ollama.*`) to an
+    agent session. The Gateway already has an agent ("main", model
+    novita/minimax/minimax-m3 in this environment) with an `exec` tool bound
+    to this machine.
 
-        import openclaw
-        agent = openclaw.Agent(model=..., api_base=...)  # local-only endpoint
-        action = agent.step(screenshot=screenshot, instruction=instruction)
-        # action: openclaw.Action(kind=..., x=..., y=..., confidence=..., raw=...)
+    So the real grounding call is: hand the natural-language instruction to
+    `openclaw agent --agent <id> --message <instruction> --json` and let
+    OpenClaw's own agent decide *how* to carry it out (it has its own exec
+    tool, so it can run the literal input-injection/window/app command
+    itself) — non-interactively, one turn, JSON result. We don't feed it a
+    screenshot; it can query system/window state itself via its exec tool
+    if needed. Verified working: it correctly answered an active-window
+    query and actually launched Notepad when asked, both via its `exec`
+    tool routed to this paired node.
 
-    This adapter's job is only to translate our `target_description` +
-    screenshot into that call and normalize the response into the plain
-    dict shape `{"success": bool, "confidence": float, "raw": Any}` that
-    `_AgenticBackendBase` consumes, so swapping SDKs later doesn't touch
-    ActionExecutor or BackendRouter.
+    Success/confidence are derived from `toolSummary.failures == 0` (heuristic:
+    calling `openclaw agent` involves no network 3rd-party inference calls
+    beyond the locally-configured model, and the model provider itself
+    (novita/ollama/whatever `openclaw configure` was set to) is expected to
+    be local per this project's "no cloud inference" requirement — swap
+    the configured model to a local Ollama one via `openclaw configure`
+    for a fully-offline setup).
     """
 
     name = "openclaw"
 
+    def __init__(
+        self,
+        confidence_threshold: float = 0.6,
+        agent_id: str = "main",
+        cli_path: str = "openclaw",
+        timeout_seconds: int = 120,
+        **options: Any,
+    ) -> None:
+        super().__init__(confidence_threshold=confidence_threshold, **options)
+        self.agent_id = agent_id
+        self.cli_path = cli_path
+        self.timeout_seconds = timeout_seconds
+
     def _call_agent(self, screenshot: Any, instruction: str) -> dict[str, Any]:
+        import json
+        import shutil
+        import subprocess
+
+        message = (
+            "You are controlling this computer directly on behalf of an autonomous "
+            "desktop assistant. Use your exec tool to actually perform the following "
+            f"action now (do not just describe it): {instruction}. "
+            "After acting, briefly confirm what you did."
+        )
+        # On Windows, `openclaw` is installed as an npm shim (.cmd), which
+        # subprocess won't resolve via PATH search with shell=False unless we
+        # hand it the fully-resolved executable (shutil.which follows
+        # PATHEXT, e.g. .cmd/.bat, where a raw list-arg subprocess.run does
+        # not) — resolve it explicitly rather than silently no-op'ing.
+        resolved_cli = shutil.which(self.cli_path) or self.cli_path
         try:
-            import openclaw  # type: ignore
-        except ImportError:
-            # Stub path: no real grounding available. Report a low-confidence
-            # non-success so BackendRouter/ActionExecutor can fail over to
-            # the configured fallback backend instead of silently lying.
+            proc = subprocess.run(
+                [
+                    resolved_cli,
+                    "agent",
+                    "--agent",
+                    self.agent_id,
+                    "--message",
+                    message,
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                shell=(os.name == "nt"),
+            )
+        except FileNotFoundError:
             return {
                 "success": False,
                 "confidence": 0.0,
                 "raw": None,
-                "error": "openclaw package not installed (stub backend)",
+                "error": f"'{self.cli_path}' CLI not found on PATH",
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "confidence": 0.0,
+                "raw": None,
+                "error": "openclaw agent call timed out",
             }
 
-        # TODO: pip install openclaw; replace stub call below with the real SDK.
-        agent = openclaw.Agent(screenshot=screenshot, instruction=instruction)  # type: ignore[attr-defined]
-        action = agent.run()
+        if proc.returncode != 0:
+            return {
+                "success": False,
+                "confidence": 0.0,
+                "raw": proc.stdout,
+                "error": proc.stderr.strip() or f"openclaw exited {proc.returncode}",
+            }
+
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            # CLI still printed something usable even if not strict JSON
+            # (e.g. warnings on stdout) — treat as a low-confidence success.
+            return {"success": True, "confidence": 0.5, "raw": proc.stdout}
+
+        tool_summary = _extract_tool_summary(payload)
+        reply_text = _extract_reply_text(payload)
+        failures = tool_summary.get("failures", 0) if tool_summary else 0
+        calls = tool_summary.get("calls", 0) if tool_summary else 0
+        success = failures == 0
+        confidence = 0.9 if (success and calls > 0) else (0.5 if success else 0.1)
         return {
-            "success": getattr(action, "success", False),
-            "confidence": getattr(action, "confidence", 0.0),
-            "raw": action,
+            "success": success,
+            "confidence": confidence,
+            "raw": payload,
+            "reply": reply_text,
+            "tool_summary": tool_summary,
         }
+
+
+def _extract_tool_summary(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Best-effort walk of the `openclaw agent --json` payload for toolSummary.
+
+    The exact shape nests under result data; walk defensively rather than
+    assuming one fixed schema depth, since it's an external CLI's output.
+    """
+
+    def _search(node: Any) -> Optional[dict[str, Any]]:
+        if isinstance(node, dict):
+            if "toolSummary" in node:
+                return node["toolSummary"]
+            for value in node.values():
+                found = _search(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _search(item)
+                if found is not None:
+                    return found
+        return None
+
+    return _search(payload)
+
+
+def _extract_reply_text(payload: dict[str, Any]) -> Optional[str]:
+    def _search(node: Any) -> Optional[str]:
+        if isinstance(node, dict):
+            for key in ("finalAssistantVisibleText", "finalAssistantRawText"):
+                if key in node:
+                    return node[key]
+            for value in node.values():
+                found = _search(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _search(item)
+                if found is not None:
+                    return found
+        return None
+
+    return _search(payload)
 
 
 class NemoClawBackend(_AgenticBackendBase):
