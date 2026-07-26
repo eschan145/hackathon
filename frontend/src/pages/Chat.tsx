@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { ChipIcon, GearIcon, SendIcon } from "../lib/icons";
 import { api } from "../api/client";
-import { badgeFor, formatElapsed, isRunning, useNow, useStore } from "../store";
+import { badgeFor, cleanStepText, firstLine, formatElapsed, isRunning, useNow, useStore } from "../store";
 
 const STEP_STATUS_LABEL: Record<string, string> = {
   pending: "Queued",
@@ -69,7 +69,7 @@ export default function Chat() {
     return steps.map((s) => ({
       id: s.id,
       lead: STEP_STATUS_LABEL[s.status] ?? s.status,
-      detail: s.description,
+      detail: cleanStepText(s.description),
     }));
   }, [entries, steps]);
 
@@ -131,7 +131,7 @@ export default function Chat() {
   return (
     <>
       <PageHeader
-        title={task ? task.objective.split("\n")[0] : "Task"}
+        title={task ? firstLine(task.objective) : "Task"}
         subtitle={
           task
             ? `${badge?.label ?? task.state} · ${steps.length} step${steps.length === 1 ? "" : "s"}${

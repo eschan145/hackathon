@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { BellIcon, CheckCircleIcon, GearIcon, LayersIcon, MessageIcon, PlusIcon } from "../lib/icons";
-import { useStore } from "../store";
+import { firstLine, useStore } from "../store";
 
 const MAX_CHATS = 6;
 
@@ -41,7 +41,7 @@ export default function Sidebar() {
                 key={t.task_id}
                 to={`/chat/${t.task_id}`}
                 icon={<MessageIcon size={16} />}
-                label={t.objective}
+                label={firstLine(t.objective)}
                 subtle
               />
             ))

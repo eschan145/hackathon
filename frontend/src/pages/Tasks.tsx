@@ -6,6 +6,7 @@ import {
   badgeFor,
   columnFor,
   formatDate,
+  firstLine,
   formatElapsed,
   isRunning,
   taskProgress,
@@ -119,7 +120,7 @@ export default function Tasks() {
                     <td>
                       <div className="cell-title">
                         {live && <span className="pulse" aria-hidden />}
-                        {task.objective.split("\n")[0]}
+                        {firstLine(task.objective)}
                       </div>
                       <div className={`cell-sub${live ? " shimmer" : ""}`}>{taskSubtitle(task)}</div>
                     </td>

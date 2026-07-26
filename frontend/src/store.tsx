@@ -556,13 +556,30 @@ export function taskProgress(task: TaskRecord): { done: number; total: number } 
   return { done, total };
 }
 
+/** First non-empty line — objectives carry attachment context on later lines. */
+export function firstLine(text: string): string {
+  return text.split("\n").find((l) => l.trim()) ?? text;
+}
+
+/**
+ * Planner replans embed the entire prior-failure history inside the next
+ * step's description, which is unreadable in a table cell or reasoning list.
+ * Keep the human-meaningful head of it.
+ */
+export function cleanStepText(text: string): string {
+  let out = text.split(/,?\s*taking into account this prior failure/i)[0];
+  const retry = out.match(/^Retry the objective ['"]?([\s\S]+?)['"]?[,\s]*$/i);
+  if (retry) out = `Retry: ${firstLine(retry[1])}`;
+  return firstLine(out).trim();
+}
+
 /** Short description line for a task — first pending/running step, else summary. */
 export function taskSubtitle(task: TaskRecord): string {
   const active = task.steps.find((s) => s.status === "running");
-  if (active) return active.description;
+  if (active) return cleanStepText(active.description);
   const nextUp = task.steps.find((s) => s.status === "pending" || s.status === "ready");
-  if (nextUp) return nextUp.description;
-  if (task.steps.length) return task.steps[task.steps.length - 1].description;
+  if (nextUp) return cleanStepText(nextUp.description);
+  if (task.steps.length) return cleanStepText(task.steps[task.steps.length - 1].description);
   return "Waiting for the planner to decompose this objective.";
 }
 
