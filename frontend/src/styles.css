@@ -839,6 +839,10 @@ tr:focus-within .row-actions {
   opacity: 1;
 }
 
+.row-actions.visible {
+  opacity: 1;
+}
+
 /* --- liveness ------------------------------------------------------------- */
 
 .pulse {

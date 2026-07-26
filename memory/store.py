@@ -95,6 +95,13 @@ class MemoryStore:
             return None
         return self._row_to_task(row)
 
+    async def delete_task(self, task_id: str) -> bool:
+        """Permanently remove one persisted task record."""
+        with self._conn:
+            cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self._episodic.delete_workflow(task_id)
+        return cursor.rowcount > 0
+
     async def list_recent_tasks(self, limit: int = 20) -> list[Task]:
         rows = self._conn.execute(
             "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { HelpIcon, SearchIcon } from "../lib/icons";
 
 interface Props {
@@ -7,9 +7,10 @@ interface Props {
   /** When provided, the search button reveals a filter field wired to this. */
   search?: { value: string; onChange: (v: string) => void; placeholder?: string };
   help?: string[];
+  actions?: ReactNode;
 }
 
-export default function PageHeader({ title, subtitle, search, help }: Props) {
+export default function PageHeader({ title, subtitle, search, help, actions }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +33,7 @@ export default function PageHeader({ title, subtitle, search, help }: Props) {
       </div>
 
       <div className="header-actions">
+        {actions}
         {searchOpen && search && (
           <input
             ref={inputRef}

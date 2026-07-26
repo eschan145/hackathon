@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import TaskComposer from "../components/TaskComposer";
-import { BanIcon, MessageIcon } from "../lib/icons";
+import { BanIcon, CheckCircleIcon, CloseIcon, MessageIcon } from "../lib/icons";
 import {
   badgeFor,
   columnFor,
@@ -20,7 +20,7 @@ import {
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 export default function Tasks() {
-  const { tasks, tasksLoaded, error, cancelTask } = useStore();
+  const { tasks, tasksLoaded, error, cancelTask, completeTask, deleteTask } = useStore();
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
   const now = useNow(1000);
@@ -30,6 +30,12 @@ export default function Tasks() {
     if (!q) return tasks;
     return tasks.filter((t) => t.objective.toLowerCase().includes(q));
   }, [tasks, query]);
+  const activeTasks = tasks.filter((task) => columnFor(task.state) !== "done");
+
+  async function completeAll() {
+    if (!activeTasks.length || !window.confirm(`Mark ${activeTasks.length} active task${activeTasks.length === 1 ? "" : "s"} complete?`)) return;
+    await Promise.all(activeTasks.map((task) => completeTask(task.task_id)));
+  }
 
   return (
     <>
@@ -37,6 +43,12 @@ export default function Tasks() {
         title="Tasks"
         subtitle="Everything the assistant is working on, locally"
         search={{ value: query, onChange: setQuery, placeholder: "Filter objectives" }}
+        actions={
+          <button className="btn-ghost" onClick={completeAll} disabled={activeTasks.length === 0}>
+            <CheckCircleIcon size={15} />
+            Complete all active
+          </button>
+        }
         help={[
           "One row per objective, newest first. Rows update live from the orchestrator.",
           "Progress counts steps the verifier confirmed against the plan's total.",
@@ -130,6 +142,25 @@ export default function Tasks() {
                           onClick={() => cancelTask(task.task_id)}
                         >
                           <BanIcon size={15} />
+                        </button>
+                        <button
+                          className="icon-btn sm"
+                          title={finished ? "Task already completed" : "Mark task complete"}
+                          disabled={finished}
+                          onClick={() => completeTask(task.task_id)}
+                        >
+                          <CheckCircleIcon size={15} />
+                        </button>
+                        <button
+                          className="icon-btn sm"
+                          title="Delete task"
+                          onClick={() => {
+                            if (window.confirm(`Delete “${firstLine(task.objective)}”? This cannot be undone.`)) {
+                              deleteTask(task.task_id);
+                            }
+                          }}
+                        >
+                          <CloseIcon size={15} />
                         </button>
                       </div>
                     </td>

@@ -39,6 +39,11 @@ class CancelResponse(BaseModel):
     cancelled: bool
 
 
+class TaskMutationResponse(BaseModel):
+    completed: bool = False
+    deleted: bool = False
+
+
 class SettingsModel(BaseModel):
     backend: str = "OpenClaw"
     planning_model: str = "llama-3.1-70b-instruct"

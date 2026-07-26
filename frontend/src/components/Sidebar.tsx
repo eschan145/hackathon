@@ -8,6 +8,7 @@ export default function Sidebar() {
   const { tasks, unreadCount, connected, setQuickAddOpen } = useStore();
 
   const chats = tasks.slice(0, MAX_CHATS);
+  const completedChats = tasks.filter((task) => task.state === "COMPLETED");
 
   return (
     <aside className="sidebar">
@@ -50,6 +51,9 @@ export default function Sidebar() {
       </div>
 
       <div className="sidebar-footer">
+        <NavItem to="/completed-chats" icon={<CheckCircleIcon />} label="Completed Chats">
+          {completedChats.length > 0 && <span className="nav-count">{completedChats.length}</span>}
+        </NavItem>
         <NavItem to="/settings" icon={<GearIcon />} label="Settings" />
         <div className="conn-row">
           <span className={`conn-dot${connected ? " on" : ""}`} />

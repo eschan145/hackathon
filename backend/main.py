@@ -48,6 +48,7 @@ from backend.schemas import (
     ObjectiveRequest,
     ObjectiveResponse,
     SettingsModel,
+    TaskMutationResponse,
     TaskListResponse,
 )
 
@@ -222,6 +223,18 @@ def create_app() -> FastAPI:
 
         raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
 
+    async def _load_task(task_id: str) -> Task | None:
+        memory = app.state.memory
+        try:
+            result = memory.get_task(task_id)
+            if asyncio.iscoroutine(result):
+                result = await result
+            if result is not None:
+                return result
+        except Exception:
+            logger.exception("memory.get_task failed for %s", task_id)
+        return app.state.results.get(task_id)
+
     @app.post("/api/tasks/{task_id}/approve", response_model=ApprovalResponse)
     async def approve_task(task_id: str, req: ApprovalRequest) -> ApprovalResponse:
         orchestrator = app.state.orchestrator
@@ -235,6 +248,44 @@ def create_app() -> FastAPI:
             return CancelResponse(cancelled=False)
         cancelled = aio_task.cancel()
         return CancelResponse(cancelled=cancelled)
+
+    @app.post("/api/tasks/{task_id}/complete", response_model=TaskMutationResponse)
+    async def complete_task(task_id: str) -> TaskMutationResponse:
+        task = await _load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
+
+        aio_task = app.state.running_tasks.pop(task_id, None)
+        if aio_task is not None and not aio_task.done():
+            aio_task.cancel()
+
+        if task.graph is not None:
+            for step in task.graph.steps:
+                if step.status not in ("verified", "failed", "skipped"):
+                    step.status = "skipped"
+        task.state = "COMPLETED"
+        task.record("manually_completed")
+        await app.state.memory.save_task(task)
+        app.state.results[task_id] = task
+        return TaskMutationResponse(completed=True)
+
+    @app.delete("/api/tasks/{task_id}", response_model=TaskMutationResponse)
+    async def delete_task(task_id: str) -> TaskMutationResponse:
+        task = await _load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
+
+        aio_task = app.state.running_tasks.pop(task_id, None)
+        if aio_task is not None and not aio_task.done():
+            aio_task.cancel()
+
+        delete_task_fn = getattr(app.state.memory, "delete_task", None)
+        if delete_task_fn is not None:
+            result = delete_task_fn(task_id)
+            if asyncio.iscoroutine(result):
+                await result
+        app.state.results.pop(task_id, None)
+        return TaskMutationResponse(deleted=True)
 
     # -- settings ---------------------------------------------------------
 

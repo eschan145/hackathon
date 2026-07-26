@@ -185,6 +185,12 @@ export const api = {
   cancelTask(taskId: string): Promise<{ cancelled: boolean }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
   },
+  completeTask(taskId: string): Promise<{ completed: boolean }> {
+    return request(`/api/tasks/${encodeURIComponent(taskId)}/complete`, { method: "POST" });
+  },
+  deleteTask(taskId: string): Promise<{ deleted: boolean }> {
+    return request(`/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  },
   getSettings(): Promise<SettingsPayload> {
     return request("/api/settings");
   },

@@ -139,6 +139,13 @@ class EpisodicMemory:
         else:
             self._fallback.append({**metadata, "embedding": embedding})
 
+    def delete_workflow(self, task_id: str) -> None:
+        """Remove all cached workflow entries for a task."""
+        if self._collection is not None:
+            self._collection.delete(where={"task_id": task_id})
+        else:
+            self._fallback = [entry for entry in self._fallback if entry["task_id"] != task_id]
+
     def find_similar(
         self,
         objective: str,

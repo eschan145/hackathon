@@ -6,6 +6,7 @@ import Tasks from "./pages/Tasks";
 import Chat from "./pages/Chat";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
+import CompletedChats from "./pages/CompletedChats";
 import { StoreProvider, useStore } from "./store";
 
 /** Cmd/Ctrl+K toggles Quick Add from anywhere. */
@@ -41,6 +42,7 @@ export default function App() {
                 <Route path="/overview" element={<Navigate to="/tasks" replace />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/chat/:taskId" element={<Chat />} />
+                <Route path="/completed-chats" element={<CompletedChats />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>

@@ -66,6 +66,8 @@ interface StoreValue {
   setApprovalMode: (mode: ApprovalMode) => void;
   createTask: (objective: string, source: string) => Promise<string>;
   cancelTask: (taskId: string) => Promise<void>;
+  completeTask: (taskId: string) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
   quickAddOpen: boolean;
   setQuickAddOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
@@ -380,6 +382,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [patchTask, pushReasoning],
   );
 
+  const completeTask = useCallback(
+    async (taskId: string) => {
+      await api.completeTask(taskId);
+      const steps = tasksRef.current.find((task) => task.task_id === taskId)?.steps.map((step) => ({
+        ...step,
+        status:
+          step.status === "pending" || step.status === "ready" || step.status === "running"
+            ? "skipped"
+            : step.status,
+      }));
+      patchTask(taskId, { state: "COMPLETED", steps });
+      pushReasoning(taskId, "Completed manually", "Marked complete from the task list.");
+    },
+    [patchTask, pushReasoning],
+  );
+
+  const deleteTask = useCallback(async (taskId: string) => {
+    await api.deleteTask(taskId);
+    setTasks((prev) => prev.filter((task) => task.task_id !== taskId));
+    setApprovals((prev) => ({ ...prev, [taskId]: undefined }));
+    setReasoning((prev) => {
+      const { [taskId]: _removed, ...remaining } = prev;
+      return remaining;
+    });
+    setChat((prev) => {
+      const { [taskId]: _removed, ...remaining } = prev;
+      return remaining;
+    });
+  }, []);
+
   /**
    * Resolve an approval. `stepIdOverride` lets autonomous mode answer an
    * approval that was never parked in state for the user to see.
@@ -459,6 +491,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setApprovalMode,
     createTask,
     cancelTask,
+    completeTask,
+    deleteTask,
     quickAddOpen,
     setQuickAddOpen,
   };
