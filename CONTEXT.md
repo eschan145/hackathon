@@ -92,9 +92,15 @@ Electron 31 + React 18 + Vite, TypeScript, hand-rolled CSS (no UI framework).
 Light Notion/ChatGPT-flavoured shell.
 
 - **Tasks** — live table of every objective: status pill, step progress, ticking
-  elapsed timer, hover row actions (open chat, cancel). Inline composer on top;
-  ⌘K/Ctrl+K opens the full one with **file attachments** (native picker; the real
-  absolute path is captured and folded into the objective) and **link chips**.
+  elapsed timer, hover row actions (open chat, cancel). The page uses the shared
+  `TaskComposer` at the top: a multiline goal, optional plan/procedure field,
+  dedicated link input, native file picker, and removable resource chips.
+  ⌘K/Ctrl+K (or the sidebar button) opens the same composer as a modal from
+  anywhere. Electron captures each attachment's absolute path; links are
+  normalized to URLs and multiple pasted links are accepted. Because the
+  backend still accepts one `objective` string, the composer keeps the goal
+  first and appends labeled `Plan or procedure`, `Files to work with`, and
+  `Links to use` sections for the planner.
 - **Task chat** — per-task thread showing the orchestrator's chain of thought
   streamed from `/ws/events`, plus approval cards.
 - **Notifications** — feed of plans, failures, approvals, completions.
