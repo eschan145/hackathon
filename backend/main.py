@@ -60,7 +60,7 @@ PORT = 8765
 SETTINGS_PATH = _PROJECT_ROOT / "config" / "user_settings.yaml"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "backend": "Native",
+    "backend": "OpenClaw",
     "planning_model": "llama-3.1-70b-instruct",
     "verification_model": "nemotron-vision-small",
     "allowed_directories": [

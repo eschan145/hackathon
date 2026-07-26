@@ -2,18 +2,13 @@ import { useEffect, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import { CloseIcon, PlusIcon } from "../lib/icons";
 import { api, SettingsPayload } from "../api/client";
-import { ApprovalMode, AUTO_APPROVE_DELAY_MS, useStore } from "../store";
+import { ApprovalMode, useStore } from "../store";
 
 const APPROVAL_OPTIONS: Array<{ value: ApprovalMode; label: string; hint: string }> = [
   {
     value: "ask",
     label: "Ask me every time",
     hint: "High-risk steps wait for your approve or deny before running.",
-  },
-  {
-    value: "timed",
-    label: `Proceed after ${AUTO_APPROVE_DELAY_MS / 1000}s`,
-    hint: "Shows a countdown you can hold or deny; otherwise it continues on its own.",
   },
   {
     value: "auto",
@@ -23,18 +18,11 @@ const APPROVAL_OPTIONS: Array<{ value: ApprovalMode; label: string; hint: string
 ];
 
 const DEFAULT_SETTINGS: SettingsPayload = {
-  backend: "Native",
+  backend: "OpenClaw",
   planning_model: "llama-3.1-70b-instruct",
   verification_model: "nemotron-vision-small",
   allowed_directories: [],
 };
-
-const BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "Native", label: "Native" },
-  { value: "OpenClaw", label: "OpenClaw (real working backend)" },
-  { value: "NemoClaw", label: "NemoClaw" },
-  { value: "OpenShell", label: "OpenShell" },
-];
 
 export default function Settings() {
   const { approvalMode, setApprovalMode } = useStore();
@@ -46,7 +34,7 @@ export default function Settings() {
   useEffect(() => {
     api
       .getSettings()
-      .then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s }))
+      .then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s, backend: "OpenClaw" }))
       .catch(() => {
         // backend unavailable yet - keep defaults
       })
@@ -71,7 +59,7 @@ export default function Settings() {
     try {
       // Keep the live approval mode authoritative — it may have changed
       // since this page loaded its copy of the settings.
-      await api.saveSettings({ ...settings, approval_mode: approvalMode });
+      await api.saveSettings({ ...settings, backend: "OpenClaw", approval_mode: approvalMode });
       setStatus({ kind: "ok", text: "Settings saved." });
     } catch (e) {
       setStatus({
@@ -85,10 +73,9 @@ export default function Settings() {
     <>
       <PageHeader
         title="Settings"
-        subtitle="Execution backend, local models, and filesystem guardrails"
+        subtitle="OpenClaw control, approvals, and filesystem guardrails"
         help={[
-          "Control backend selects which automation layer executes steps.",
-          "Models run locally — names must match what's loaded on the DGX Spark.",
+          "OpenClaw is the controller used to execute steps.",
           "Allow-listed directories bound where the agent may read and write.",
         ]}
       />
@@ -116,48 +103,6 @@ export default function Settings() {
                 </span>
               </button>
             ))}
-          </div>
-        </section>
-
-        <section className="panel">
-          <h2 className="panel-title">Execution</h2>
-          <div className="setting-row">
-            <div className="setting-copy">
-              <span className="setting-name">Control backend</span>
-              <span className="setting-hint">Layer used to drive the desktop</span>
-            </div>
-            <select
-              value={settings.backend}
-              onChange={(e) => setSettings((s) => ({ ...s, backend: e.target.value }))}
-            >
-              {BACKEND_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="setting-row">
-            <div className="setting-copy">
-              <span className="setting-name">Planning model</span>
-              <span className="setting-hint">Decomposes objectives into a step DAG</span>
-            </div>
-            <input
-              value={settings.planning_model}
-              onChange={(e) => setSettings((s) => ({ ...s, planning_model: e.target.value }))}
-            />
-          </div>
-
-          <div className="setting-row">
-            <div className="setting-copy">
-              <span className="setting-name">Verification model</span>
-              <span className="setting-hint">Confirms each step actually succeeded</span>
-            </div>
-            <input
-              value={settings.verification_model}
-              onChange={(e) => setSettings((s) => ({ ...s, verification_model: e.target.value }))}
-            />
           </div>
         </section>
 

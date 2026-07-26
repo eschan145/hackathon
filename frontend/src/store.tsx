@@ -17,9 +17,7 @@ import { eventSocket } from "./hooks/useEventSocket";
  * so it only applies while the app is open — a run started and left
  * unattended still blocks if the window is closed.
  */
-export type ApprovalMode = "ask" | "timed" | "auto";
-
-export const AUTO_APPROVE_DELAY_MS = 10000;
+export type ApprovalMode = "ask" | "auto";
 
 export interface NotificationItem {
   id: string;
@@ -47,8 +45,6 @@ export interface ChatMessage {
 export interface PendingApproval {
   stepId: string;
   description: string;
-  /** Epoch ms at which this auto-approves, when the mode is "timed". */
-  autoApproveAt?: number;
 }
 
 interface StoreValue {
@@ -66,8 +62,6 @@ interface StoreValue {
   appendChat: (taskId: string, message: Omit<ChatMessage, "id" | "ts">) => void;
   approvals: Record<string, PendingApproval | undefined>;
   resolveApproval: (taskId: string, approved: boolean) => Promise<void>;
-  /** Cancels a pending auto-approval countdown, handing the decision back. */
-  holdApproval: (taskId: string) => void;
   approvalMode: ApprovalMode;
   setApprovalMode: (mode: ApprovalMode) => void;
   createTask: (objective: string, source: string) => Promise<string>;
@@ -113,7 +107,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // mode changes mid-run.
   const approvalModeRef = useRef(approvalMode);
   approvalModeRef.current = approvalMode;
-  const autoTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const resolveRef =
     useRef<(taskId: string, approved: boolean, stepIdOverride?: string) => Promise<void>>();
   const tasksRef = useRef(tasks);
@@ -157,20 +150,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .getSettings()
       .then((s) => {
         const mode = (s as { approval_mode?: ApprovalMode }).approval_mode;
-        if (mode === "ask" || mode === "timed" || mode === "auto") setApprovalModeState(mode);
+        if (mode === "ask" || mode === "auto") setApprovalModeState(mode);
       })
       .catch(() => {
         // Backend down: keep the safe default ("ask").
       });
   }, []);
-
-  const timersRef = autoTimers;
-  useEffect(() => {
-    const timers = timersRef.current;
-    return () => {
-      Object.values(timers).forEach(clearTimeout);
-    };
-  }, [timersRef]);
 
   // ---- live event wiring ------------------------------------------------
 
@@ -329,16 +314,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             break;
           }
 
-          const autoApproveAt = mode === "timed" ? Date.now() + AUTO_APPROVE_DELAY_MS : undefined;
-          setApprovals((prev) => ({ ...prev, [taskId]: { stepId, description, autoApproveAt } }));
+          setApprovals((prev) => ({ ...prev, [taskId]: { stepId, description } }));
           pushReasoning(taskId, "Approval required", description);
           pushAssistantMessage(
             taskId,
-            mode === "timed"
-              ? `This step is flagged high-risk: ${description}\n\nProceeding automatically in ${
-                  AUTO_APPROVE_DELAY_MS / 1000
-                }s unless you hold it.`
-              : `This step is flagged high-risk and needs your approval before I continue: ${description}`,
+            `This step is flagged high-risk and needs your approval before I continue: ${description}`,
           );
           pushNotification({
             kind: "warning",
@@ -346,14 +326,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             body: description,
             taskId,
           });
-
-          if (autoApproveAt) {
-            clearTimeout(autoTimers.current[taskId]);
-            autoTimers.current[taskId] = setTimeout(() => {
-              delete autoTimers.current[taskId];
-              resolveRef.current?.(taskId, true, stepId);
-            }, AUTO_APPROVE_DELAY_MS);
-          }
           break;
         }
         case "task_completed": {
@@ -408,25 +380,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [patchTask, pushReasoning],
   );
 
-  const holdApproval = useCallback((taskId: string) => {
-    clearTimeout(autoTimers.current[taskId]);
-    delete autoTimers.current[taskId];
-    setApprovals((prev) => {
-      const pending = prev[taskId];
-      if (!pending) return prev;
-      return { ...prev, [taskId]: { ...pending, autoApproveAt: undefined } };
-    });
-    pushReasoning(taskId, "Held", "Auto-approval cancelled — waiting on your decision.");
-  }, [pushReasoning]);
-
   /**
    * Resolve an approval. `stepIdOverride` lets autonomous mode answer an
    * approval that was never parked in state for the user to see.
    */
   const resolveApproval = useCallback(
     async (taskId: string, approved: boolean, stepIdOverride?: string) => {
-      clearTimeout(autoTimers.current[taskId]);
-      delete autoTimers.current[taskId];
       const pending = approvalsRef.current[taskId];
       const stepId = stepIdOverride ?? pending?.stepId;
       if (!stepId) return;
@@ -496,7 +455,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     appendChat,
     approvals,
     resolveApproval,
-    holdApproval,
     approvalMode,
     setApprovalMode,
     createTask,

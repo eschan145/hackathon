@@ -79,7 +79,7 @@ export interface SettingsPayload {
   verification_model: string;
   allowed_directories: string[];
   /**
-   * How approval requests are handled: "ask" | "timed" | "auto". Not part of
+   * How approval requests are handled: "ask" | "auto". Not part of
    * backend/schemas.py's declared fields, but SettingsModel sets
    * `extra = "allow"`, so it persists to config/settings.yaml unchanged.
    */

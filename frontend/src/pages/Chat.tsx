@@ -23,7 +23,6 @@ export default function Chat() {
     appendChat,
     approvals,
     resolveApproval,
-    holdApproval,
     createTask,
     refresh,
   } = useStore();
@@ -124,10 +123,6 @@ export default function Chat() {
   }
 
   const badge = task ? badgeFor(task.state) : null;
-  const countdown = approval?.autoApproveAt
-    ? Math.max(0, Math.ceil((approval.autoApproveAt - now) / 1000))
-    : null;
-
   return (
     <>
       <PageHeader
@@ -202,16 +197,10 @@ export default function Chat() {
               <div className="approval-copy">
                 <span className="approval-title">
                   Approval required
-                  {countdown !== null && <span className="countdown">auto-approving in {countdown}s</span>}
                 </span>
                 <p>{approval.description}</p>
               </div>
               <div className="approval-actions">
-                {countdown !== null && (
-                  <button className="btn-ghost" onClick={() => holdApproval(taskId)}>
-                    Hold
-                  </button>
-                )}
                 <button className="btn-ghost" onClick={() => resolveApproval(taskId, false)}>
                   Deny
                 </button>
@@ -219,14 +208,6 @@ export default function Chat() {
                   Approve
                 </button>
               </div>
-              {countdown !== null && approval.autoApproveAt && (
-                <span
-                  className="approval-progress"
-                  style={{
-                    width: `${Math.max(0, Math.min(100, ((approval.autoApproveAt - now) / 10000) * 100))}%`,
-                  }}
-                />
-              )}
             </div>
           )}
         </div>

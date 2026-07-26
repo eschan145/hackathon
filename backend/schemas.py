@@ -40,7 +40,7 @@ class CancelResponse(BaseModel):
 
 
 class SettingsModel(BaseModel):
-    backend: str = "Native"
+    backend: str = "OpenClaw"
     planning_model: str = "llama-3.1-70b-instruct"
     verification_model: str = "nemotron-vision-small"
     allowed_directories: list[str] = Field(default_factory=list)
