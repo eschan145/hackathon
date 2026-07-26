@@ -35,6 +35,12 @@ backends:
     options:
       confidence_threshold: 0.6
 
+  openshell:
+    class: "execution.control_backend.OpenShellBackend"
+    enabled: false          # flip true + set semantic_backend.primary once OpenShell is installed
+    options:
+      confidence_threshold: 0.6
+
 # Risk-level / action-kind routing rules, evaluated top to bottom by
 # BackendRouter.route(). "kind" matches ActionExecutor's inferred action
 # kind (see execution/executor.py::_infer_action_kind).

@@ -454,6 +454,49 @@ class NemoClawBackend(_AgenticBackendBase):
         }
 
 
+class OpenShellBackend(_AgenticBackendBase):
+    """Adapter for "OpenShell" as an alternative agentic computer-control backend.
+
+    Per ARCHITECTURE.md's original constraint, any of OpenShell/OpenClaw/
+    NemoClaw is an acceptable control layer. OpenClaw is the one actually
+    installed, paired, and verified working on this machine (see
+    OpenClawBackend above, which shells out to the real `openclaw` CLI).
+    OpenShell is not installed/available in this environment, so this stays
+    a clean adapter stub — same shape as NemoClawBackend — so it's a
+    one-line config flip (config/backends.yaml `semantic_backend.primary`)
+    to switch once a real OpenShell CLI/SDK is available, with no changes
+    needed to BackendRouter or ActionExecutor.
+
+    # TODO: once OpenShell is installed, replace the stub call below. If it
+    # turns out to be a CLI like OpenClaw's, mirror OpenClawBackend's
+    # subprocess pattern (resolve via shutil.which, run non-interactively,
+    # parse JSON) instead of a Python import.
+    """
+
+    name = "openshell"
+
+    def _call_agent(self, screenshot: Any, instruction: str) -> dict[str, Any]:
+        try:
+            import openshell  # type: ignore
+        except ImportError:
+            return {
+                "success": False,
+                "confidence": 0.0,
+                "raw": None,
+                "error": "openshell not installed (stub backend)",
+            }
+
+        # TODO: pip install openshell (or shell out to its CLI); replace stub
+        # call below with the real integration, mirroring OpenClawBackend.
+        agent = openshell.Agent(screenshot=screenshot, instruction=instruction)  # type: ignore[attr-defined]
+        action = agent.run()
+        return {
+            "success": getattr(action, "success", False),
+            "confidence": getattr(action, "confidence", 0.0),
+            "raw": action,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Integration extension point (SaaS actions) — built out by integrations/
 # ---------------------------------------------------------------------------
@@ -519,7 +562,11 @@ class BackendRouter:
         self._integration: Optional[IntegrationBackend] = None
 
         backends_cfg = self.config.get("backends", {})
-        for name, cls in (("openclaw", OpenClawBackend), ("nemoclaw", NemoClawBackend)):
+        for name, cls in (
+            ("openclaw", OpenClawBackend),
+            ("nemoclaw", NemoClawBackend),
+            ("openshell", OpenShellBackend),
+        ):
             options = backends_cfg.get(name, {}).get("options", {})
             self._agentic[name] = cls(**options)
 
