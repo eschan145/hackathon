@@ -95,14 +95,44 @@ class _StubMemory:
 # ---------------------------------------------------------------------------
 
 
+def _local_llm_reachable() -> bool:
+    """Quick synchronous reachability check against config/models.yaml's planning endpoint."""
+    try:
+        import httpx
+        import yaml
+
+        config_path = _PROJECT_ROOT / "config" / "models.yaml"
+        base_url = "http://localhost:8000/v1"
+        if config_path.exists():
+            with config_path.open("r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            base_url = cfg.get("planning", {}).get("base_url", base_url)
+        httpx.get(base_url.rsplit("/v1", 1)[0] or base_url, timeout=1.5)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _build_planner() -> Any:
     try:
         from planning.planner import LLMPlanner
 
-        return LLMPlanner()
+        if _local_llm_reachable():
+            return LLMPlanner()
+        raise RuntimeError("no local planning-model endpoint reachable (config/models.yaml)")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("planning/ not available yet (%s); using stub planner", exc)
-        return _StubPlanner()
+        logger.warning(
+            "Local LLM planner not usable yet (%s); falling back to OpenClawPlanner "
+            "(delegates the whole objective to OpenClaw's own agent instead of decomposing it)",
+            exc,
+        )
+        try:
+            from planning.openclaw_planner import OpenClawPlanner
+
+            return OpenClawPlanner()
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning("OpenClawPlanner not available either (%s); using no-op stub planner", exc2)
+            return _StubPlanner()
 
 
 def _build_executor() -> Any:

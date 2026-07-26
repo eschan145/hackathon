@@ -111,8 +111,10 @@ export const api = {
   createObjective(body: CreateObjectiveRequest): Promise<CreateObjectiveResponse> {
     return request("/api/objectives", { method: "POST", body: JSON.stringify(body) });
   },
-  listTasks(): Promise<TaskSummary[]> {
-    return request("/api/tasks");
+  async listTasks(): Promise<TaskSummary[]> {
+    // backend/main.py's GET /api/tasks returns {"tasks": [...]}, not a bare array.
+    const res = await request<{ tasks: TaskSummary[] }>("/api/tasks");
+    return res.tasks;
   },
   getTask(taskId: string): Promise<TaskDetail> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}`);

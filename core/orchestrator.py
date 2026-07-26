@@ -125,18 +125,28 @@ class Orchestrator:
 
         await self._transition(task, "PLANNING")
 
-        # Prefer a cached workflow over invoking the planner from scratch
-        # (ARCHITECTURE.md section 8 — workflow cache).
-        cached = await self.memory.get_similar_workflow(objective)
-        if cached is not None:
-            graph = cached.model_copy(update={"task_id": task.id})
-            # Reset any leftover step statuses from the cached graph so it
-            # re-executes cleanly for this new task.
-            for s in graph.steps:
-                s.status = "pending"
-                s.retry_count = 0
-        else:
-            graph = await self.planner.create_plan(task)
+        try:
+            # Prefer a cached workflow over invoking the planner from scratch
+            # (ARCHITECTURE.md section 8 — workflow cache).
+            cached = await self.memory.get_similar_workflow(objective)
+            if cached is not None:
+                graph = cached.model_copy(update={"task_id": task.id})
+                # Reset any leftover step statuses from the cached graph so it
+                # re-executes cleanly for this new task.
+                for s in graph.steps:
+                    s.status = "pending"
+                    s.retry_count = 0
+            else:
+                graph = await self.planner.create_plan(task)
+        except Exception as exc:  # noqa: BLE001
+            # Without this, a planner/memory error (e.g. no local LLM
+            # endpoint reachable) leaves the task stuck at PLANNING forever
+            # with no signal to the caller/UI — surface it as a real failure
+            # instead.
+            await self._transition(task, "FAILED", reason=f"planning_error: {exc}")
+            self._emit(EventType.TASK_FAILED, task, reason=f"planning_error: {exc}")
+            await self.memory.save_task(task)
+            return task
 
         task.graph = graph
         self._emit(EventType.PLAN_GENERATED, task, step_count=len(graph.steps))

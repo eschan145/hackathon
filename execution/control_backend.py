@@ -205,6 +205,20 @@ class _AgenticBackendBase:
         log_action("click", {"backend": self.name, "target_description": target_description, "result": result})
         return ok
 
+    def act(self, description: str) -> bool:
+        """Hand a freeform instruction straight to the agent, no verb prefix.
+
+        Used for ambiguous/general actions (kind == "semantic_ui") where
+        forcing a "click ..." wrapper (see click_description) would be
+        wrong — e.g. a whole-objective stopgap step like "open Notepad and
+        confirm it's ready" isn't a click at all.
+        """
+        screenshot = self._capture_screenshot()
+        result = self._call_agent(screenshot, description)
+        ok = bool(result.get("success")) and result.get("confidence", 0) >= self.confidence_threshold
+        log_action("act", {"backend": self.name, "description": description, "result": result})
+        return ok
+
     def type_text_description(self, target_description: str, text: str) -> bool:
         screenshot = self._capture_screenshot()
         result = self._call_agent(screenshot, f"type '{text}' into {target_description}")

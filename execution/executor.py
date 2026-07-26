@@ -77,7 +77,14 @@ class ActionExecutor:
                 details["integration_result"] = result
 
             elif isinstance(backend, _AgenticBackendBase):
-                success = backend.click_description(step.description)
+                if kind == "click":
+                    success = backend.click_description(step.description)
+                else:
+                    # Ambiguous/general action (kind == "semantic_ui", e.g. a
+                    # whole-objective stopgap step) — hand it over verbatim
+                    # rather than forcing a "click ..." wrapper that doesn't
+                    # make sense for non-click instructions.
+                    success = backend.act(step.description)
                 raw_output = f"{backend.name} grounded action for: {step.description}"
                 details["backend"] = backend.name
 
