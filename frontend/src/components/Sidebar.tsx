@@ -27,6 +27,9 @@ export default function Sidebar() {
   const attentionCount = tasks.filter(
     (task) => task.state === "AWAITING_APPROVAL" || Boolean(approvals[task.task_id]),
   ).length;
+  const attentionTask = tasks.find(
+    (task) => task.state === "AWAITING_APPROVAL" || Boolean(approvals[task.task_id]),
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -64,7 +67,19 @@ export default function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`} aria-label="Primary navigation">
       <div className="sidebar-brand">
-        <OrchestratrLogo size={30} wordmark={!collapsed} />
+        {attentionTask ? (
+          <button
+            className="sidebar-attention-trigger"
+            onClick={() => navigate(`/task/${attentionTask.task_id}`)}
+            aria-label={`Review approval for ${titleFor(attentionTask)}`}
+            title="Review task needing approval"
+          >
+            <OrchestratrLogo size={30} wordmark={!collapsed} />
+            <span className="sidebar-attention-badge" aria-hidden />
+          </button>
+        ) : (
+          <OrchestratrLogo size={30} wordmark={!collapsed} />
+        )}
         <button className="sidebar-collapse" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
           <ChevronIcon size={16} />
         </button>

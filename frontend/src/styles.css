@@ -71,9 +71,37 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .sidebar button, .sidebar a, .sidebar input { -webkit-app-region: no-drag; }
 .sidebar.collapsed { width: 70px; flex-basis: 70px; padding-inline: 9px; }
 .sidebar-brand { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }
+.sidebar-attention-trigger {
+  position: relative;
+  min-height: 42px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(169,111,39,.2), 0 0 0 1px rgba(169,111,39,.22);
+  transform: translateX(-5px) scale(1.04);
+  animation: attention-pop 1.8s ease-in-out infinite;
+}
+.sidebar-attention-trigger:hover { background: #fffaf0; }
+.sidebar-attention-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--sidebar);
+  border-radius: 50%;
+  background: var(--warning);
+}
+@keyframes attention-pop {
+  50% { transform: translateX(-8px) scale(1.08); box-shadow: 0 12px 26px rgba(169,111,39,.28), 0 0 0 5px rgba(169,111,39,.1); }
+}
 .sidebar-collapse { width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); border-radius: 8px; }
 .sidebar-collapse:hover { background: rgba(23,33,59,.07); color: var(--navy); }
 .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0; }
+.sidebar.collapsed .sidebar-attention-trigger { padding: 0 6px; transform: translateX(4px) scale(1.05); }
+.sidebar.collapsed .sidebar-attention-trigger .orchestratr-logo { width: 30px; overflow: hidden; }
 .sidebar.collapsed .sidebar-collapse { position: absolute; top: 60px; }
 .sidebar.collapsed .sidebar-collapse svg { transform: rotate(180deg); }
 .sidebar-create {
