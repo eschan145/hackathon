@@ -1,0 +1,41 @@
+# Security policy for execution/ — least-privilege config per ARCHITECTURE.md
+# section 12. Read by execution/file_ops.py (allow-listed dirs, deny-list
+# patterns) and execution/control_backend.py (network egress allow-list is
+# consumed by integrations/, referenced here for completeness).
+#
+# Kept intentionally simple for the hackathon: plain yaml, no schema
+# validation, string paths expanded with os.path.expanduser/expandvars at
+# load time.
+
+filesystem:
+  allowed_roots:
+    - "~/Documents"
+    - "~/Downloads"
+    - "./workspace"          # project scratch workspace, relative to repo root
+  # glob-style patterns checked against the resolved absolute path; a hit
+  # here denies the operation even if the path is under an allowed root.
+  deny_patterns:
+    - "*.exe"
+    - "*.dll"
+    - "*/System32/*"
+    - "*/.ssh/*"
+    - "*/.aws/*"
+
+clipboard:
+  audit: true   # every clipboard read/write goes through audit_log.log_action
+
+destructive_ops_deny_list:
+  - "format_disk"
+  - "registry_edit"
+  - "uninstall_software"
+  - "delete_system_files"
+
+network_egress:
+  # actions targeting these hosts/services must go through integrations/
+  # (MCP), never native/backend HTTP calls directly from execution/.
+  allowed_via_integrations_only:
+    - "mail.google.com"
+    - "api.todoist.com"
+    - "api.notion.com"
+    - "www.googleapis.com"
+    - "api.github.com"

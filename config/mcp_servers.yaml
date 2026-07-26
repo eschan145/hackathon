@@ -1,0 +1,65 @@
+# MCP server registry — template/example.
+#
+# Consumed by integrations/mcp_client_manager.py:MCPClientManager.load_config().
+# Each top-level key is a logical server name used everywhere else in this
+# codebase (integrations/gmail.py etc. refer to servers by these names).
+#
+# `command` + `args` describe a local subprocess speaking the MCP stdio
+# transport (per the Model Context Protocol spec). `env` is a dict of extra
+# environment variables merged into the subprocess env (use this for API
+# keys/OAuth client ids — never commit real secrets to this file; use
+# ${VAR} placeholders resolved from the parent process environment at
+# connect time).
+#
+# NOTE FOR WHOEVER WIRES UP REAL SERVERS: the exact npm/pip package names
+# and CLI invocations below are PLACEHOLDERS reflecting commonly-used
+# community/official servers as of this writing. Verify against the actual
+# published package before relying on this in a real run — MCP server
+# ecosystem names/flags change. Swap `command`/`args`/`env` per server as
+# needed; the adapter code does not hardcode any of this.
+
+gmail:
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-gmail"]
+  env:
+    GMAIL_OAUTH_CLIENT_ID: "${GMAIL_OAUTH_CLIENT_ID}"
+    GMAIL_OAUTH_CLIENT_SECRET: "${GMAIL_OAUTH_CLIENT_SECRET}"
+    GMAIL_OAUTH_REFRESH_TOKEN: "${GMAIL_OAUTH_REFRESH_TOKEN}"
+
+todoist:
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-todoist"]
+  env:
+    TODOIST_API_TOKEN: "${TODOIST_API_TOKEN}"
+
+notion:
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-notion"]
+  env:
+    NOTION_API_KEY: "${NOTION_API_KEY}"
+
+gdrive:
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-gdrive"]
+  env:
+    GDRIVE_OAUTH_CLIENT_ID: "${GDRIVE_OAUTH_CLIENT_ID}"
+    GDRIVE_OAUTH_CLIENT_SECRET: "${GDRIVE_OAUTH_CLIENT_SECRET}"
+    GDRIVE_OAUTH_REFRESH_TOKEN: "${GDRIVE_OAUTH_REFRESH_TOKEN}"
+
+github:
+  # Official GitHub MCP server. Two common distributions exist: a Docker
+  # image (`ghcr.io/github/github-mcp-server`) or a local Go binary. Using
+  # npx-style placeholder here for consistency; replace with whichever
+  # distribution you actually install.
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-github"]
+  env:
+    GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+
+calendar:
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-google-calendar"]
+  env:
+    GCAL_OAUTH_CLIENT_ID: "${GCAL_OAUTH_CLIENT_ID}"
+    GCAL_OAUTH_CLIENT_SECRET: "${GCAL_OAUTH_CLIENT_SECRET}"
+    GCAL_OAUTH_REFRESH_TOKEN: "${GCAL_OAUTH_REFRESH_TOKEN}"

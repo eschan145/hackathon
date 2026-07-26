@@ -1,0 +1,44 @@
+# Backend selection config for execution/control_backend.py::BackendRouter.
+# Per ARCHITECTURE.md section 14: "New computer-control backends: implement
+# ControlBackend interface, register in config/backends.yaml — no
+# orchestrator changes needed."
+#
+# Simple yaml, read once at BackendRouter construction time. No schema
+# validation for the hackathon.
+
+# Which agentic backend is primary for semantic/ambiguous UI actions
+# ("click Buy Now", "select the John contact"). The other is kept as a
+# configured fallback so BackendRouter can retry with it on failure.
+semantic_backend:
+  primary: "openclaw"     # one of: openclaw, nemoclaw
+  fallback: "nemoclaw"
+
+backends:
+  native:
+    class: "execution.control_backend.NativeInputBackend"
+    enabled: true
+
+  openclaw:
+    class: "execution.control_backend.OpenClawBackend"
+    enabled: false          # flip true once `pip install openclaw` is done
+    # options passed to OpenClawBackend.__init__ as **kwargs, e.g. model name,
+    # confidence threshold, grounding endpoint.
+    options:
+      confidence_threshold: 0.6
+
+  nemoclaw:
+    class: "execution.control_backend.NemoClawBackend"
+    enabled: false          # flip true once the NemoClaw SDK is installed
+    options:
+      confidence_threshold: 0.6
+
+# Risk-level / action-kind routing rules, evaluated top to bottom by
+# BackendRouter.route(). "kind" matches ActionExecutor's inferred action
+# kind (see execution/executor.py::_infer_action_kind).
+routing:
+  - match_kind: ["type_text", "press_keys", "window_focus", "clipboard", "file_ops"]
+    backend: "native"
+  - match_kind: ["click", "scroll", "semantic_ui"]
+    backend: "semantic"      # resolved to semantic_backend.primary/fallback
+  - match_kind: ["saas", "integration"]
+    backend: "integration"   # delegated to integrations/, see control_backend.py
