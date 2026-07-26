@@ -1,13 +1,5 @@
 import { NavLink } from "react-router-dom";
-import {
-  BellIcon,
-  CheckCircleIcon,
-  GearIcon,
-  LayersIcon,
-  LayoutIcon,
-  MessageIcon,
-  PlusIcon,
-} from "../lib/icons";
+import { BellIcon, CheckCircleIcon, GearIcon, LayersIcon, MessageIcon, PlusIcon } from "../lib/icons";
 import { useStore } from "../store";
 
 const MAX_CHATS = 6;
@@ -32,11 +24,10 @@ export default function Sidebar() {
       </button>
 
       <nav className="sidebar-nav">
+        <NavItem to="/tasks" icon={<CheckCircleIcon />} label="Tasks" />
         <NavItem to="/notifications" icon={<BellIcon />} label="Notifications">
           {unreadCount > 0 && <span className="nav-count">{unreadCount}</span>}
         </NavItem>
-        <NavItem to="/tasks" icon={<CheckCircleIcon />} label="Tasks" />
-        <NavItem to="/overview" icon={<LayoutIcon />} label="Overview" />
       </nav>
 
       <div className="sidebar-section">

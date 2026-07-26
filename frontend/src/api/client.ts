@@ -78,6 +78,12 @@ export interface SettingsPayload {
   planning_model: string;
   verification_model: string;
   allowed_directories: string[];
+  /**
+   * How approval requests are handled: "ask" | "timed" | "auto". Not part of
+   * backend/schemas.py's declared fields, but SettingsModel sets
+   * `extra = "allow"`, so it persists to config/settings.yaml unchanged.
+   */
+  approval_mode?: string;
 }
 
 // Matches backend/main.py's WS /ws/events payload exactly: lowercase

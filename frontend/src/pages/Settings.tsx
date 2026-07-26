@@ -2,6 +2,25 @@ import { useEffect, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import { CloseIcon, PlusIcon } from "../lib/icons";
 import { api, SettingsPayload } from "../api/client";
+import { ApprovalMode, AUTO_APPROVE_DELAY_MS, useStore } from "../store";
+
+const APPROVAL_OPTIONS: Array<{ value: ApprovalMode; label: string; hint: string }> = [
+  {
+    value: "ask",
+    label: "Ask me every time",
+    hint: "High-risk steps wait for your approve or deny before running.",
+  },
+  {
+    value: "timed",
+    label: `Proceed after ${AUTO_APPROVE_DELAY_MS / 1000}s`,
+    hint: "Shows a countdown you can hold or deny; otherwise it continues on its own.",
+  },
+  {
+    value: "auto",
+    label: "Run autonomously",
+    hint: "Never pauses. High-risk steps — purchases, sending, deleting — run without confirmation.",
+  },
+];
 
 const DEFAULT_SETTINGS: SettingsPayload = {
   backend: "Native",
@@ -18,6 +37,7 @@ const BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 export default function Settings() {
+  const { approvalMode, setApprovalMode } = useStore();
   const [settings, setSettings] = useState<SettingsPayload>(DEFAULT_SETTINGS);
   const [newDir, setNewDir] = useState("");
   const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -49,7 +69,9 @@ export default function Settings() {
 
   async function save() {
     try {
-      await api.saveSettings(settings);
+      // Keep the live approval mode authoritative — it may have changed
+      // since this page loaded its copy of the settings.
+      await api.saveSettings({ ...settings, approval_mode: approvalMode });
       setStatus({ kind: "ok", text: "Settings saved." });
     } catch (e) {
       setStatus({
@@ -73,6 +95,29 @@ export default function Settings() {
 
       <div className="page-body settings">
         {!loaded && <div className="banner subtle">Loading settings…</div>}
+
+        <section className="panel">
+          <h2 className="panel-title">Approvals</h2>
+          <p className="panel-note">
+            The orchestrator only pauses for steps it rates high-risk. Auto-approval is applied by
+            this app, so it holds only while the window is open.
+          </p>
+          <div className="choice-list">
+            {APPROVAL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                className={`choice${approvalMode === opt.value ? " selected" : ""}`}
+                onClick={() => setApprovalMode(opt.value)}
+              >
+                <span className="choice-radio" aria-hidden />
+                <span className="choice-copy">
+                  <span className="choice-name">{opt.label}</span>
+                  <span className="choice-hint">{opt.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="panel">
           <h2 className="panel-title">Execution</h2>

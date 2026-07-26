@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { AlertIcon, CheckCircleIcon, ChipIcon } from "../lib/icons";
-import { formatRelative, useStore, useTicker } from "../store";
+import { formatRelative, useNow, useStore } from "../store";
 
 const ICONS = {
   info: <ChipIcon size={16} />,
@@ -13,7 +13,7 @@ const ICONS = {
 export default function Notifications() {
   const { notifications, markNotificationsRead } = useStore();
   const navigate = useNavigate();
-  useTicker();
+  useNow(30000);
 
   // Landing on the view clears the sidebar's unread badge.
   useEffect(() => {

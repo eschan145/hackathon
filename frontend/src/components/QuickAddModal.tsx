@@ -1,70 +1,97 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CloseIcon } from "../lib/icons";
+import { CloseIcon, LinkIcon, PaperclipIcon, SendIcon } from "../lib/icons";
 import { useStore } from "../store";
 
-const PRIORITIES = ["High", "Medium", "Low"];
+interface Attachment {
+  id: string;
+  label: string;
+  /** Absolute path when running under Electron, bare filename in a browser. */
+  path: string;
+}
 
 /**
- * The objective is the only field the backend takes (POST /api/objectives),
- * so the extra fields are folded into it as natural-language context the
- * planner can actually act on rather than being dropped.
+ * The backend takes only an objective string (POST /api/objectives), so
+ * attachments are appended as plain-text context the local planner can act
+ * on — absolute paths for files, bare URLs for sites to work in.
  */
-function composeObjective(title: string, description: string, due: string, priority: string): string {
-  const parts = [title.trim()];
-  if (description.trim()) parts.push(description.trim());
-  const context: string[] = [];
-  if (due) {
-    const d = new Date(`${due}T00:00:00`);
-    if (!Number.isNaN(d.getTime())) {
-      context.push(
-        `Due ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`,
-      );
-    }
-  }
-  if (priority) context.push(`Priority: ${priority}`);
-  if (context.length) parts.push(context.join(" · "));
+function composeObjective(text: string, files: Attachment[], links: string[]): string {
+  const parts = [text.trim()];
+  if (files.length) parts.push(`Files to work with:\n${files.map((f) => `- ${f.path}`).join("\n")}`);
+  if (links.length) parts.push(`Work in these sites:\n${links.map((l) => `- ${l}`).join("\n")}`);
   return parts.join("\n\n");
+}
+
+function normalizeUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  return /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 export default function QuickAddModal() {
   const { quickAddOpen, setQuickAddOpen, createTask } = useStore();
   const navigate = useNavigate();
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [due, setDue] = useState("");
-  const [priority, setPriority] = useState("High");
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [links, setLinks] = useState<string[]>([]);
+  const [linkDraft, setLinkDraft] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (quickAddOpen) {
-      setTitle("");
-      setDescription("");
-      setDue("");
-      setPriority("High");
-      setError(null);
-    }
-  }, [quickAddOpen]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!quickAddOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setQuickAddOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [quickAddOpen, setQuickAddOpen]);
+    setText("");
+    setFiles([]);
+    setLinks([]);
+    setLinkDraft("");
+    setLinkOpen(false);
+    setError(null);
+  }, [quickAddOpen]);
+
+  useEffect(() => {
+    if (linkOpen) linkRef.current?.focus();
+  }, [linkOpen]);
+
+  // Grow the composer with its content, ChatGPT-style.
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
+  }, [text, quickAddOpen]);
 
   if (!quickAddOpen) return null;
 
+  function pickFiles(list: FileList | null) {
+    if (!list?.length) return;
+    const picked: Attachment[] = Array.from(list).map((f, i) => ({
+      id: `${Date.now()}-${i}`,
+      label: f.name,
+      // Electron exposes the real path on File; a plain browser does not.
+      path: (f as File & { path?: string }).path || f.name,
+    }));
+    setFiles((prev) => [...prev, ...picked]);
+  }
+
+  function addLink() {
+    const url = normalizeUrl(linkDraft);
+    if (!url || links.includes(url)) return;
+    setLinks((prev) => [...prev, url]);
+    setLinkDraft("");
+  }
+
   async function submit() {
-    if (!title.trim() || submitting) return;
+    if (!text.trim() || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const taskId = await createTask(composeObjective(title, description, due, priority), "gui");
+      const taskId = await createTask(composeObjective(text, files, links), "gui");
       setQuickAddOpen(false);
       navigate(`/chat/${taskId}`);
     } catch (e) {
@@ -76,64 +103,106 @@ export default function QuickAddModal() {
 
   return (
     <div className="modal-overlay" onMouseDown={() => setQuickAddOpen(false)}>
-      <div className="modal" role="dialog" aria-modal onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>Create New Task</h2>
-          <button className="icon-btn ghost" onClick={() => setQuickAddOpen(false)} aria-label="Close">
-            <CloseIcon />
-          </button>
-        </div>
-
-        <label className="field">
-          <span className="field-label">Task Title</span>
-          <input
+      <div className="composer-modal" role="dialog" aria-modal onMouseDown={(e) => e.stopPropagation()}>
+        <div className="composer-shell">
+          <textarea
+            ref={textRef}
             autoFocus
-            value={title}
-            placeholder="e.g. Draft a reply to the unread email from Alex"
-            onChange={(e) => setTitle(e.target.value)}
+            rows={1}
+            value={text}
+            placeholder="What should the assistant do?"
+            onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
             }}
           />
-        </label>
 
-        <label className="field">
-          <span className="field-label">Description</span>
-          <textarea
-            rows={3}
-            value={description}
-            placeholder="Describe details of the deliverable..."
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </label>
-
-        <div className="field-grid">
-          <label className="field">
-            <span className="field-label">Due Date</span>
-            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">Priority</span>
-            <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
+          {(files.length > 0 || links.length > 0) && (
+            <div className="chips">
+              {files.map((f) => (
+                <span className="chip" key={f.id} title={f.path}>
+                  <PaperclipIcon size={13} />
+                  {f.label}
+                  <button
+                    onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
+                    aria-label={`Remove ${f.label}`}
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </span>
               ))}
-            </select>
-          </label>
+              {links.map((l) => (
+                <span className="chip" key={l} title={l}>
+                  <LinkIcon size={13} />
+                  {l.replace(/^https?:\/\//, "")}
+                  <button
+                    onClick={() => setLinks((prev) => prev.filter((x) => x !== l))}
+                    aria-label={`Remove ${l}`}
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {linkOpen && (
+            <div className="link-row">
+              <input
+                ref={linkRef}
+                value={linkDraft}
+                placeholder="amazon.com"
+                onChange={(e) => setLinkDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLink();
+                  }
+                  if (e.key === "Escape") setLinkOpen(false);
+                }}
+              />
+              <button className="btn-quiet" onClick={addLink} disabled={!linkDraft.trim()}>
+                Add link
+              </button>
+            </div>
+          )}
+
+          <div className="composer-tools">
+            <button className="tool-btn" onClick={() => fileInputRef.current?.click()}>
+              <PaperclipIcon size={15} />
+              Attach files
+            </button>
+            <button className="tool-btn" onClick={() => setLinkOpen((o) => !o)}>
+              <LinkIcon size={15} />
+              Add link
+            </button>
+            <span className="composer-hint">Enter to send · Shift+Enter for a new line</span>
+            <button
+              className="btn-primary send"
+              onClick={submit}
+              disabled={!text.trim() || submitting}
+              aria-label="Add task"
+            >
+              <SendIcon size={15} />
+            </button>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              pickFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
         </div>
 
         {error && <div className="form-error">{error}</div>}
-
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={() => setQuickAddOpen(false)}>
-            Cancel
-          </button>
-          <button className="btn-primary" onClick={submit} disabled={!title.trim() || submitting}>
-            {submitting ? "Adding..." : "Add Task"}
-          </button>
-        </div>
       </div>
     </div>
   );

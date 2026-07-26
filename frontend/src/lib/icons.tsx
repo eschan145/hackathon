@@ -145,11 +145,19 @@ export function LayersIcon({ size = 18, className }: IconProps) {
   );
 }
 
-export function CalendarIcon({ size = 16, className }: IconProps) {
+export function PaperclipIcon({ size = 16, className }: IconProps) {
   return (
     <svg {...svgProps(size, className)}>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4" />
+      <path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.19a3.67 3.67 0 1 1 5.18 5.18l-9.2 9.2a1.83 1.83 0 1 1-2.59-2.6l8.5-8.48" />
+    </svg>
+  );
+}
+
+export function LinkIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
     </svg>
   );
 }

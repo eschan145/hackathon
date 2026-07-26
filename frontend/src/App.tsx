@@ -3,7 +3,6 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import QuickAddModal from "./components/QuickAddModal";
 import Tasks from "./pages/Tasks";
-import Overview from "./pages/Overview";
 import Chat from "./pages/Chat";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
@@ -39,7 +38,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/tasks" replace />} />
                 <Route path="/tasks" element={<Tasks />} />
-                <Route path="/overview" element={<Overview />} />
+                <Route path="/overview" element={<Navigate to="/tasks" replace />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/chat/:taskId" element={<Chat />} />
                 <Route path="/settings" element={<Settings />} />
