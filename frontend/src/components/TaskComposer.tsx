@@ -17,17 +17,15 @@ interface TaskComposerProps {
 
 /**
  * The backend currently accepts one objective string. Keep the user's task as
- * the first line (so task-list titles stay useful), then add the optional
- * execution context in clearly labeled sections for the planner.
+ * the first line (so task-list titles stay useful), then add linked resources
+ * in clearly labeled sections for the planner.
  */
 function composeObjective(
   objective: string,
-  procedure: string,
   files: Attachment[],
   links: string[],
 ): string {
   const parts = [objective.trim()];
-  if (procedure.trim()) parts.push(`Plan or procedure:\n${procedure.trim()}`);
   if (files.length) parts.push(`Files to work with:\n${files.map((file) => `- ${file.path}`).join("\n")}`);
   if (links.length) parts.push(`Links to use:\n${links.map((link) => `- ${link}`).join("\n")}`);
   return parts.join("\n\n");
@@ -53,7 +51,6 @@ function mergeLinks(current: string[], draft: string): string[] {
 export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComposerProps) {
   const { createTask } = useStore();
   const [objective, setObjective] = useState("");
-  const [procedure, setProcedure] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [links, setLinks] = useState<string[]>([]);
   const [linkDraft, setLinkDraft] = useState("");
@@ -62,19 +59,16 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectiveRef = useRef<HTMLTextAreaElement>(null);
-  const procedureRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    for (const el of [objectiveRef.current, procedureRef.current]) {
-      if (!el) continue;
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, variant === "modal" ? 180 : 220)}px`;
-    }
-  }, [objective, procedure, variant]);
+    const el = objectiveRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, variant === "modal" ? 180 : 220)}px`;
+  }, [objective, variant]);
 
   function reset() {
     setObjective("");
-    setProcedure("");
     setFiles([]);
     setLinks([]);
     setLinkDraft("");
@@ -111,7 +105,7 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
     setError(null);
     try {
       const taskId = await createTask(
-        composeObjective(objective, procedure, files, submittedLinks),
+        composeObjective(objective, files, submittedLinks),
         "gui",
       );
       reset();
@@ -146,25 +140,10 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
           <textarea
             ref={objectiveRef}
             autoFocus={autoFocus}
-            rows={3}
+            rows={5}
             value={objective}
-            placeholder="Describe the result you want…"
+            placeholder="Describe the result you want, including any plan, procedure, constraints, or steps to follow…"
             onChange={(event) => setObjective(event.target.value)}
-            onKeyDown={submitShortcut}
-          />
-        </label>
-
-        <label className="composer-field">
-          <span className="composer-label">
-            Plan or procedure
-            <span className="composer-optional">Optional</span>
-          </span>
-          <textarea
-            ref={procedureRef}
-            rows={2}
-            value={procedure}
-            placeholder="Explain how it should approach the task, constraints to follow, or steps to take…"
-            onChange={(event) => setProcedure(event.target.value)}
             onKeyDown={submitShortcut}
           />
         </label>
