@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
-import { BanIcon, MessageIcon, PlusIcon } from "../lib/icons";
+import TaskComposer from "../components/TaskComposer";
+import { BanIcon, MessageIcon } from "../lib/icons";
 import {
   badgeFor,
   columnFor,
@@ -19,10 +20,8 @@ import {
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 export default function Tasks() {
-  const { tasks, tasksLoaded, error, cancelTask, createTask, setQuickAddOpen } = useStore();
+  const { tasks, tasksLoaded, error, cancelTask } = useStore();
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const now = useNow(1000);
 
@@ -31,18 +30,6 @@ export default function Tasks() {
     if (!q) return tasks;
     return tasks.filter((t) => t.objective.toLowerCase().includes(q));
   }, [tasks, query]);
-
-  async function quickSubmit() {
-    const text = draft.trim();
-    if (!text || submitting) return;
-    setSubmitting(true);
-    setDraft("");
-    try {
-      await createTask(text, "gui");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   return (
     <>
@@ -53,35 +40,14 @@ export default function Tasks() {
         help={[
           "One row per objective, newest first. Rows update live from the orchestrator.",
           "Progress counts steps the verifier confirmed against the plan's total.",
-          "Press ⌘K for the full composer with file and link attachments.",
+          "Add context, files, and links directly from the task composer. Press ⌘K to open it anywhere.",
         ]}
       />
 
       <div className="page-body">
         {error && <div className="banner">Backend unavailable — {error}</div>}
 
-        <div className="composer-row">
-          <input
-            className="composer-input"
-            value={draft}
-            placeholder="Give the assistant an objective…"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") quickSubmit();
-            }}
-          />
-          <button
-            className="btn-quiet"
-            onClick={() => setQuickAddOpen(true)}
-            title="Open the full composer (⌘K)"
-          >
-            <PlusIcon size={14} />
-            Attach files or links
-          </button>
-          <button className="btn-primary" onClick={quickSubmit} disabled={!draft.trim() || submitting}>
-            {submitting ? "Adding…" : "Add task"}
-          </button>
-        </div>
+        <TaskComposer variant="inline" />
 
         {!tasksLoaded ? (
           <SkeletonTable />
