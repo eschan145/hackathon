@@ -145,14 +145,44 @@ def _build_executor() -> Any:
         return _StubExecutor()
 
 
+def _local_vlm_reachable() -> bool:
+    """Quick synchronous reachability check against config/models.yaml's vision endpoint."""
+    try:
+        import httpx
+        import yaml
+
+        config_path = _PROJECT_ROOT / "config" / "models.yaml"
+        base_url = "http://localhost:8001/v1"
+        if config_path.exists():
+            with config_path.open("r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            base_url = cfg.get("vision", {}).get("base_url", base_url)
+        httpx.get(base_url.rsplit("/v1", 1)[0] or base_url, timeout=1.5)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _build_verifier() -> Any:
     try:
         from verification.verifier import ActionVerifier
 
-        return ActionVerifier()
+        if _local_vlm_reachable():
+            return ActionVerifier()
+        raise RuntimeError("no local vision-model endpoint reachable (config/models.yaml)")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("verification/ not available yet (%s); using stub verifier", exc)
-        return _StubVerifier()
+        logger.warning(
+            "Local VLM verifier not usable yet (%s); falling back to OpenClawVerifier "
+            "(asks OpenClaw's own agent to judge success instead of defaulting to failure)",
+            exc,
+        )
+        try:
+            from verification.openclaw_verifier import OpenClawVerifier
+
+            return OpenClawVerifier()
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning("OpenClawVerifier not available either (%s); using no-op stub verifier", exc2)
+            return _StubVerifier()
 
 
 def _build_memory() -> Any:
