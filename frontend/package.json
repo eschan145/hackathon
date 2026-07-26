@@ -1,0 +1,41 @@
+{
+  "name": "assistant-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron + React frontend for the local autonomous desktop assistant",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c blue,green \"vite\" \"npm:electron:dev\"",
+    "electron:dev": "tsc -p electron/tsconfig.json && wait-on tcp:5173 && cross-env NODE_ENV=development electron dist-electron/main.js",
+    "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p electron/tsconfig.json",
+    "start": "npm run build && cross-env NODE_ENV=production electron dist-electron/main.js",
+    "package": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.hackathon.assistant",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  }
+}
