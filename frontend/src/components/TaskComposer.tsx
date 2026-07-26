@@ -1,11 +1,18 @@
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { CloseIcon, LinkIcon, PaperclipIcon, SendIcon } from "../lib/icons";
+import {
+  ClipboardEvent,
+  DragEvent,
+  FormEvent,
+  KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { CloseIcon, LinkIcon, PaperclipIcon, PlusIcon, SendIcon } from "../lib/icons";
 import { useStore } from "../store";
 
 interface Attachment {
   id: string;
   label: string;
-  /** Absolute path when running under Electron, bare filename in a browser. */
   path: string;
 }
 
@@ -15,16 +22,7 @@ interface TaskComposerProps {
   onCreated?: (taskId: string) => void;
 }
 
-/**
- * The backend currently accepts one objective string. Keep the user's task as
- * the first line (so task-list titles stay useful), then add linked resources
- * in clearly labeled sections for the planner.
- */
-function composeObjective(
-  objective: string,
-  files: Attachment[],
-  links: string[],
-): string {
+function composeObjective(objective: string, files: Attachment[], links: string[]): string {
   const parts = [objective.trim()];
   if (files.length) parts.push(`Files to work with:\n${files.map((file) => `- ${file.path}`).join("\n")}`);
   if (links.length) parts.push(`Links to use:\n${links.map((link) => `- ${link}`).join("\n")}`);
@@ -54,9 +52,10 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
   const [files, setFiles] = useState<Attachment[]>([]);
   const [links, setLinks] = useState<string[]>([]);
   const [linkDraft, setLinkDraft] = useState("");
+  const [expanded, setExpanded] = useState(variant === "modal");
+  const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectiveRef = useRef<HTMLTextAreaElement>(null);
 
@@ -64,8 +63,9 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
     const el = objectiveRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, variant === "modal" ? 180 : 220)}px`;
-  }, [objective, variant]);
+    const max = variant === "modal" ? 210 : 170;
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, expanded ? 68 : 28), max)}px`;
+  }, [objective, expanded, variant]);
 
   function reset() {
     setObjective("");
@@ -73,20 +73,22 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
     setLinks([]);
     setLinkDraft("");
     setError(null);
+    if (variant === "inline") setExpanded(false);
   }
 
-  function pickFiles(list: FileList | null) {
-    if (!list?.length) return;
-    const picked: Attachment[] = Array.from(list).map((file, index) => ({
+  function pickFiles(list: FileList | File[]) {
+    const pickedFiles = Array.from(list);
+    if (!pickedFiles.length) return;
+    const picked: Attachment[] = pickedFiles.map((file, index) => ({
       id: `${Date.now()}-${index}`,
       label: file.name,
-      // Electron 31 exposes the real path; browsers only expose the filename.
       path: (file as File & { path?: string }).path || file.name,
     }));
     setFiles((current) => {
       const knownPaths = new Set(current.map((file) => file.path));
       return [...current, ...picked.filter((file) => !knownPaths.has(file.path))];
     });
+    setExpanded(true);
   }
 
   function addLinks() {
@@ -94,24 +96,37 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
     if (next.length === links.length) return;
     setLinks(next);
     setLinkDraft("");
+    setExpanded(true);
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = event.clipboardData.getData("text").trim();
+    if (!pasted || !/^https?:\/\/\S+(?:[\s,]+https?:\/\/\S+)*$/i.test(pasted)) return;
+    event.preventDefault();
+    setLinks((current) => mergeLinks(current, pasted));
+    setExpanded(true);
   }
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    if (!objective.trim() || submitting) return;
+    const trimmed = objective.trim();
+    if (!trimmed || submitting) return;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length < 2 && files.length === 0 && links.length === 0) {
+      setExpanded(true);
+      setError("Add a little more detail or attach a source for Orchestratr to use.");
+      return;
+    }
 
     const submittedLinks = mergeLinks(links, linkDraft);
     setSubmitting(true);
     setError(null);
     try {
-      const taskId = await createTask(
-        composeObjective(objective, files, submittedLinks),
-        "gui",
-      );
+      const taskId = await createTask(composeObjective(trimmed, files, submittedLinks), "gui");
       reset();
       onCreated?.(taskId);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not reach the backend.");
+      setError(caught instanceof Error ? caught.message : "Could not reach the local engine.");
     } finally {
       setSubmitting(false);
     }
@@ -124,101 +139,122 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
     }
   }
 
+  function onDrop(event: DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDragging(false);
+    pickFiles(event.dataTransfer.files);
+  }
+
+  const hasResources = files.length > 0 || links.length > 0;
+
   return (
-    <form className={`task-composer ${variant}`} onSubmit={submit}>
-      <div className="task-composer-header">
-        <div>
-          <h2>{variant === "inline" ? "Add a task" : "Quick add task"}</h2>
-          <p>Give the assistant the goal and any context it should follow.</p>
-        </div>
-        <span className="composer-shortcut">⌘/Ctrl + Enter to add</span>
+    <form
+      className={`task-composer ${variant}${expanded ? " expanded" : ""}${dragging ? " dragging" : ""}`}
+      onSubmit={submit}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) setDragging(false);
+      }}
+      onDrop={onDrop}
+    >
+      <div className="composer-main">
+        <span className="composer-plus" aria-hidden>
+          <PlusIcon size={18} />
+        </span>
+        <textarea
+          ref={objectiveRef}
+          autoFocus={autoFocus}
+          rows={1}
+          value={objective}
+          aria-label="New task"
+          placeholder="What would you like Orchestratr to do?"
+          onFocus={() => setExpanded(true)}
+          onChange={(event) => {
+            setObjective(event.target.value);
+            if (error) setError(null);
+          }}
+          onPaste={handlePaste}
+          onKeyDown={submitShortcut}
+        />
+        <button
+          type="submit"
+          className="composer-launch"
+          disabled={!objective.trim() || submitting}
+          aria-label="Start task"
+        >
+          {submitting ? <span className="mini-spinner" /> : <SendIcon size={16} />}
+          <span>{submitting ? "Starting" : "Start task"}</span>
+        </button>
       </div>
 
-      <div className="task-composer-fields">
-        <label className="composer-field">
-          <span className="composer-label">What should it do?</span>
-          <textarea
-            ref={objectiveRef}
-            autoFocus={autoFocus}
-            rows={5}
-            value={objective}
-            placeholder="Describe the result you want, including any plan, procedure, constraints, or steps to follow…"
-            onChange={(event) => setObjective(event.target.value)}
-            onKeyDown={submitShortcut}
-          />
-        </label>
+      {(expanded || hasResources) && (
+        <div className="composer-detail">
+          {hasResources && (
+            <div className="composer-resources" aria-label="Task resources">
+              {files.map((file) => (
+                <span className="resource-chip" key={file.id} title={file.path}>
+                  <PaperclipIcon size={13} />
+                  <span>{file.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles((current) => current.filter((item) => item.id !== file.id))}
+                    aria-label={`Remove ${file.label}`}
+                  >
+                    <CloseIcon size={11} />
+                  </button>
+                </span>
+              ))}
+              {links.map((link) => (
+                <span className="resource-chip" key={link} title={link}>
+                  <LinkIcon size={13} />
+                  <span>{link.replace(/^https?:\/\//, "")}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLinks((current) => current.filter((item) => item !== link))}
+                    aria-label={`Remove ${link}`}
+                  >
+                    <CloseIcon size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
 
-        <div className="composer-field">
-          <label className="composer-label" htmlFor={`task-links-${variant}`}>
-            Links
-            <span className="composer-optional">Optional</span>
-          </label>
-          <div className="composer-link-control">
-            <LinkIcon size={15} />
-            <input
-              id={`task-links-${variant}`}
-              type="text"
-              inputMode="url"
-              value={linkDraft}
-              placeholder="Paste one or more links"
-              onChange={(event) => setLinkDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addLinks();
-                }
-              }}
-            />
-            <button type="button" className="btn-quiet" onClick={addLinks} disabled={!linkDraft.trim()}>
-              Add
+          <div className="composer-tools">
+            <button type="button" className="composer-tool" onClick={() => fileInputRef.current?.click()}>
+              <PaperclipIcon size={15} />
+              Attach
             </button>
+            <div className="link-tool">
+              <LinkIcon size={15} />
+              <input
+                type="text"
+                inputMode="url"
+                value={linkDraft}
+                aria-label="Add links"
+                placeholder="Paste a link"
+                onChange={(event) => setLinkDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addLinks();
+                  }
+                }}
+              />
+              {linkDraft && (
+                <button type="button" onClick={addLinks}>
+                  Add
+                </button>
+              )}
+            </div>
+            <span className="composer-hint">⌘↵ to start · drop files anywhere</span>
           </div>
-          <span className="composer-field-hint">Separate multiple links with spaces or new lines.</span>
-        </div>
-      </div>
-
-      {(files.length > 0 || links.length > 0) && (
-        <div className="composer-resources" aria-label="Task resources">
-          {files.map((file) => (
-            <span className="chip" key={file.id} title={file.path}>
-              <PaperclipIcon size={13} />
-              <span>{file.label}</span>
-              <button
-                type="button"
-                onClick={() => setFiles((current) => current.filter((item) => item.id !== file.id))}
-                aria-label={`Remove ${file.label}`}
-              >
-                <CloseIcon size={12} />
-              </button>
-            </span>
-          ))}
-          {links.map((link) => (
-            <span className="chip" key={link} title={link}>
-              <LinkIcon size={13} />
-              <span>{link.replace(/^https?:\/\//, "")}</span>
-              <button
-                type="button"
-                onClick={() => setLinks((current) => current.filter((item) => item !== link))}
-                aria-label={`Remove ${link}`}
-              >
-                <CloseIcon size={12} />
-              </button>
-            </span>
-          ))}
         </div>
       )}
-
-      <div className="composer-actions">
-        <button type="button" className="tool-btn" onClick={() => fileInputRef.current?.click()}>
-          <PaperclipIcon size={15} />
-          Attach files
-        </button>
-        <span className="composer-action-hint">Files stay local and are passed to the assistant by path.</span>
-        <button type="submit" className="btn-primary" disabled={!objective.trim() || submitting}>
-          <SendIcon size={15} />
-          {submitting ? "Adding…" : "Add task"}
-        </button>
-      </div>
 
       <input
         ref={fileInputRef}
@@ -226,16 +262,13 @@ export default function TaskComposer({ variant, autoFocus, onCreated }: TaskComp
         multiple
         hidden
         onChange={(event) => {
-          pickFiles(event.target.files);
+          if (event.target.files) pickFiles(event.target.files);
           event.target.value = "";
         }}
       />
 
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
+      {dragging && <div className="drop-message">Drop files to add context</div>}
+      {error && <div className="form-error" role="alert">{error}</div>}
     </form>
   );
 }

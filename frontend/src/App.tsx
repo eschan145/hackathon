@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import QuickAddModal from "./components/QuickAddModal";
 import Tasks from "./pages/Tasks";
 import Chat from "./pages/Chat";
-import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
-import CompletedChats from "./pages/CompletedChats";
+import Overlay from "./pages/Overlay";
+import Onboarding from "./components/Onboarding";
 import { StoreProvider, useStore } from "./store";
 
 /** Cmd/Ctrl+K toggles Quick Add from anywhere. */
@@ -27,29 +27,43 @@ function Shortcuts() {
   return null;
 }
 
+function AppContent() {
+  const location = useLocation();
+  const overlay = location.pathname === "/overlay";
+  if (overlay) return <Routes><Route path="/overlay" element={<Overlay />} /></Routes>;
+
+  return (
+    <>
+      <Shortcuts />
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<Navigate to="/now" replace />} />
+            <Route path="/now" element={<Tasks />} />
+            <Route path="/tasks" element={<Navigate to="/now" replace />} />
+            <Route path="/overview" element={<Navigate to="/now" replace />} />
+            <Route path="/notifications" element={<Navigate to="/now" replace />} />
+            <Route path="/task/:taskId" element={<Chat />} />
+            <Route path="/chat/:taskId" element={<Chat />} />
+            <Route path="/archive" element={<Navigate to="/now" replace />} />
+            <Route path="/completed-chats" element={<Navigate to="/now" replace />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/now" replace />} />
+          </Routes>
+        </main>
+      </div>
+      <QuickAddModal />
+      <Onboarding />
+    </>
+  );
+}
+
 export default function App() {
   return (
     <StoreProvider>
       <HashRouter>
-        <Shortcuts />
-        <div className="app-shell">
-          <Sidebar />
-          <main className="main">
-            <div className="surface">
-              <Routes>
-                <Route path="/" element={<Navigate to="/tasks" replace />} />
-                <Route path="/tasks" element={<Tasks />} />
-                <Route path="/overview" element={<Navigate to="/tasks" replace />} />
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/chat/:taskId" element={<Chat />} />
-                <Route path="/completed-chats" element={<CompletedChats />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/tasks" replace />} />
-              </Routes>
-            </div>
-          </main>
-        </div>
-        <QuickAddModal />
+        <AppContent />
       </HashRouter>
     </StoreProvider>
   );

@@ -98,6 +98,7 @@ class MemoryStore:
     async def delete_task(self, task_id: str) -> bool:
         """Permanently remove one persisted task record."""
         with self._conn:
+            self._conn.execute("DELETE FROM conversation_messages WHERE task_id = ?", (task_id,))
             cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         self._episodic.delete_workflow(task_id)
         return cursor.rowcount > 0
@@ -107,6 +108,44 @@ class MemoryStore:
             "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [self._row_to_task(r) for r in rows]
+
+    async def list_conversation_messages(self, task_id: str) -> list[dict[str, Any]]:
+        """Return the durable, user-visible conversation for a task."""
+        rows = self._conn.execute(
+            """
+            SELECT id, task_id, role, text, created_at
+            FROM conversation_messages
+            WHERE task_id = ?
+            ORDER BY created_at ASC
+            """,
+            (task_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def append_conversation_message(
+        self,
+        task_id: str,
+        message_id: str,
+        role: str,
+        text: str,
+        created_at: float,
+    ) -> dict[str, Any]:
+        """Persist one chat message, idempotently by message id."""
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO conversation_messages (id, task_id, role, text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (message_id, task_id, role, text, created_at),
+            )
+        return {
+            "id": message_id,
+            "task_id": task_id,
+            "role": role,
+            "text": text,
+            "created_at": created_at,
+        }
 
     @staticmethod
     def _row_to_task(row: Any) -> Task:

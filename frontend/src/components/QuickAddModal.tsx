@@ -40,7 +40,7 @@ export default function QuickAddModal() {
           autoFocus
           onCreated={(taskId) => {
             setQuickAddOpen(false);
-            navigate(`/chat/${taskId}`);
+            navigate(`/task/${taskId}`);
           }}
         />
       </div>

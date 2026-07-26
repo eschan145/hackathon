@@ -19,7 +19,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     history_json TEXT,
     success INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_task
+ON conversation_messages(task_id, created_at);
 
 CREATE TABLE IF NOT EXISTS credentials_ref (
     service TEXT PRIMARY KEY,
@@ -110,3 +121,5 @@ def init_db(conn: sqlite3.Connection) -> None:
         row = conn.execute("SELECT version FROM schema_meta LIMIT 1").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_meta (version) VALUES (?)", (SCHEMA_VERSION,))
+        elif row["version"] < SCHEMA_VERSION:
+            conn.execute("UPDATE schema_meta SET version = ?", (SCHEMA_VERSION,))

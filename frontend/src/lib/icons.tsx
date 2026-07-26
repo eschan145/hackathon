@@ -161,3 +161,39 @@ export function LinkIcon({ size = 16, className }: IconProps) {
     </svg>
   );
 }
+
+export function ChevronIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+export function MoreIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function PanelIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16M9 9l-3 3 3 3" />
+    </svg>
+  );
+}
+
+export function ClockIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}

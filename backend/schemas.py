@@ -61,3 +61,18 @@ class EventMessage(BaseModel):
     task_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
     timestamp: float
+
+
+class ConversationMessageCreate(BaseModel):
+    id: str
+    role: str
+    text: str
+    created_at: float
+
+
+class ConversationMessage(ConversationMessageCreate):
+    task_id: str
+
+
+class ConversationResponse(BaseModel):
+    messages: list[ConversationMessage] = Field(default_factory=list)

@@ -86,6 +86,14 @@ export interface SettingsPayload {
   approval_mode?: string;
 }
 
+export interface ConversationMessagePayload {
+  id: string;
+  task_id: string;
+  role: "user" | "assistant";
+  text: string;
+  created_at: number;
+}
+
 // Matches backend/main.py's WS /ws/events payload exactly: lowercase
 // snake_case (EventType enum values serialize lowercase), not the
 // uppercase names used internally in core/events.py.
@@ -190,6 +198,18 @@ export const api = {
   },
   deleteTask(taskId: string): Promise<{ deleted: boolean }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  },
+  getConversation(taskId: string): Promise<{ messages: ConversationMessagePayload[] }> {
+    return request(`/api/tasks/${encodeURIComponent(taskId)}/conversation`);
+  },
+  appendConversation(
+    taskId: string,
+    message: Omit<ConversationMessagePayload, "task_id">,
+  ): Promise<ConversationMessagePayload> {
+    return request(`/api/tasks/${encodeURIComponent(taskId)}/conversation`, {
+      method: "POST",
+      body: JSON.stringify(message),
+    });
   },
   getSettings(): Promise<SettingsPayload> {
     return request("/api/settings");

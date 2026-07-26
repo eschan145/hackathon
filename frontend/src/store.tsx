@@ -68,6 +68,10 @@ interface StoreValue {
   cancelTask: (taskId: string) => Promise<void>;
   completeTask: (taskId: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  restartTask: (taskId: string) => Promise<string>;
+  taskTitles: Record<string, string>;
+  titleFor: (task: TaskRecord) => string;
+  renameTask: (taskId: string, title: string) => void;
   quickAddOpen: boolean;
   setQuickAddOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
@@ -78,6 +82,15 @@ let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
+
+function readStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /** A task the websocket told us about but that REST hasn't returned yet. */
 function placeholderTask(taskId: string, objective: string, source: string): TaskRecord {
@@ -99,8 +112,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(eventSocket.isConnected);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [readAt, setReadAt] = useState(0);
-  const [reasoning, setReasoning] = useState<Record<string, ReasoningEntry[]>>({});
-  const [chat, setChat] = useState<Record<string, ChatMessage[]>>({});
+  const [reasoning, setReasoning] = useState<Record<string, ReasoningEntry[]>>(() =>
+    readStored("orchestratr.activity.v2", {}),
+  );
+  const [chat, setChat] = useState<Record<string, ChatMessage[]>>(() =>
+    readStored("orchestratr.chat.v2", {}),
+  );
+  const [taskTitles, setTaskTitles] = useState<Record<string, string>>(() =>
+    readStored("orchestratr.titles.v2", {}),
+  );
   const [approvals, setApprovals] = useState<Record<string, PendingApproval | undefined>>({});
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [approvalMode, setApprovalModeState] = useState<ApprovalMode>("ask");
@@ -135,6 +155,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
         return [...byId.values()].sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
       });
+      const conversations = await Promise.allSettled(
+        list.map(async (task) => ({
+          taskId: task.task_id,
+          messages: (await api.getConversation(task.task_id)).messages,
+        })),
+      );
+      setChat((prev) => {
+        const next = { ...prev };
+        for (const result of conversations) {
+          if (result.status !== "fulfilled" || !result.value.messages.length) continue;
+          const local = next[result.value.taskId] ?? [];
+          const byId = new Map(local.map((message) => [message.id, message]));
+          for (const message of result.value.messages) {
+            byId.set(message.id, {
+              id: message.id,
+              role: message.role,
+              text: message.text,
+              ts: message.created_at,
+            });
+          }
+          next[result.value.taskId] = [...byId.values()].sort((a, b) => a.ts - b.ts);
+        }
+        return next;
+      });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Backend unavailable");
@@ -146,6 +190,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    localStorage.setItem("orchestratr.chat.v2", JSON.stringify(chat));
+  }, [chat]);
+
+  useEffect(() => {
+    localStorage.setItem("orchestratr.activity.v2", JSON.stringify(reasoning));
+  }, [reasoning]);
+
+  useEffect(() => {
+    localStorage.setItem("orchestratr.titles.v2", JSON.stringify(taskTitles));
+  }, [taskTitles]);
 
   useEffect(() => {
     api
@@ -175,13 +231,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const pushAssistantMessage = useCallback((taskId: string, text: string) => {
     if (!taskId) return;
+    const message: ChatMessage = {
+      id: nextId(),
+      role: "assistant",
+      text,
+      ts: Date.now(),
+    };
     setChat((prev) => {
       const list = prev[taskId] ?? [];
       return {
         ...prev,
-        [taskId]: [...list, { id: nextId(), role: "assistant", text, ts: Date.now() }],
+        [taskId]: [...list, message],
       };
     });
+    void api
+      .appendConversation(taskId, {
+        id: message.id,
+        role: message.role,
+        text: message.text,
+        created_at: message.ts,
+      })
+      .catch(() => {
+        // Local storage remains the offline fallback and will merge on reconnect.
+      });
   }, []);
 
   /** Merge a partial task update coming off the websocket. */
@@ -410,7 +482,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { [taskId]: _removed, ...remaining } = prev;
       return remaining;
     });
+    setTaskTitles((prev) => {
+      const { [taskId]: _removed, ...remaining } = prev;
+      return remaining;
+    });
   }, []);
+
+  const restartTask = useCallback(
+    async (taskId: string) => {
+      const source = tasksRef.current.find((task) => task.task_id === taskId);
+      if (!source) throw new Error("Task not found");
+      return createTask(source.objective, `restart:${taskId}`);
+    },
+    [createTask],
+  );
+
+  const renameTask = useCallback((taskId: string, title: string) => {
+    const next = title.trim();
+    setTaskTitles((prev) => {
+      if (!next) {
+        const { [taskId]: _removed, ...remaining } = prev;
+        return remaining;
+      }
+      return { ...prev, [taskId]: next };
+    });
+  }, []);
+
+  const titleFor = useCallback(
+    (task: TaskRecord) => taskTitles[task.task_id] || firstLine(task.objective),
+    [taskTitles],
+  );
 
   /**
    * Resolve an approval. `stepIdOverride` lets autonomous mode answer an
@@ -454,10 +555,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const appendChat = useCallback((taskId: string, message: Omit<ChatMessage, "id" | "ts">) => {
+    const fullMessage: ChatMessage = { ...message, id: nextId(), ts: Date.now() };
     setChat((prev) => {
       const list = prev[taskId] ?? [];
-      return { ...prev, [taskId]: [...list, { ...message, id: nextId(), ts: Date.now() }] };
+      return { ...prev, [taskId]: [...list, fullMessage] };
     });
+    void api
+      .appendConversation(taskId, {
+        id: fullMessage.id,
+        role: fullMessage.role,
+        text: fullMessage.text,
+        created_at: fullMessage.ts,
+      })
+      .catch(() => {
+        // Keep the message locally until the backend is available.
+      });
   }, []);
 
   const markNotificationsRead = useCallback(() => setReadAt(Date.now()), []);
@@ -493,6 +605,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     cancelTask,
     completeTask,
     deleteTask,
+    restartTask,
+    taskTitles,
+    titleFor,
+    renameTask,
     quickAddOpen,
     setQuickAddOpen,
   };
@@ -525,12 +641,12 @@ export interface StatusBadge {
 export function badgeFor(state: string): StatusBadge {
   switch (state.toUpperCase()) {
     case "COMPLETED":
-      return { label: "Finished", tone: "green" };
+      return { label: "Completed", tone: "green" };
     case "FAILED":
     case "CANCELLED":
       return { label: "Failed", tone: "red" };
     case "AWAITING_APPROVAL":
-      return { label: "Needs Approval", tone: "amber" };
+      return { label: "Needs approval", tone: "amber" };
     case "RECEIVED":
       return { label: "Up Next", tone: "amber" };
     case "REPLANNING":
@@ -538,7 +654,7 @@ export function badgeFor(state: string): StatusBadge {
     case "PLANNING":
       return { label: "Planning", tone: "blue" };
     default:
-      return { label: "In Progress", tone: "blue" };
+      return { label: "Running", tone: "blue" };
   }
 }
 

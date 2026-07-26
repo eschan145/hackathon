@@ -44,6 +44,9 @@ from backend.schemas import (
     ApprovalRequest,
     ApprovalResponse,
     CancelResponse,
+    ConversationMessage,
+    ConversationMessageCreate,
+    ConversationResponse,
     EventMessage,
     ObjectiveRequest,
     ObjectiveResponse,
@@ -110,7 +113,7 @@ def _event_to_message(event: Event) -> dict[str, Any]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Autonomous Desktop Assistant Backend")
+    app = FastAPI(title="Orchestratr Backend")
 
     app.add_middleware(
         CORSMiddleware,
@@ -286,6 +289,38 @@ def create_app() -> FastAPI:
                 await result
         app.state.results.pop(task_id, None)
         return TaskMutationResponse(deleted=True)
+
+    # -- persistent task conversations -----------------------------------
+
+    @app.get("/api/tasks/{task_id}/conversation", response_model=ConversationResponse)
+    async def get_conversation(task_id: str) -> ConversationResponse:
+        list_messages = getattr(app.state.memory, "list_conversation_messages", None)
+        if list_messages is None:
+            return ConversationResponse(messages=[])
+        result = list_messages(task_id)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return ConversationResponse(
+            messages=[ConversationMessage(**message) for message in (result or [])]
+        )
+
+    @app.post("/api/tasks/{task_id}/conversation", response_model=ConversationMessage)
+    async def append_conversation(
+        task_id: str, message: ConversationMessageCreate
+    ) -> ConversationMessage:
+        append_message = getattr(app.state.memory, "append_conversation_message", None)
+        if append_message is None:
+            raise HTTPException(status_code=501, detail="Conversation persistence unavailable")
+        result = append_message(
+            task_id,
+            message.id,
+            message.role,
+            message.text,
+            message.created_at,
+        )
+        if asyncio.iscoroutine(result):
+            result = await result
+        return ConversationMessage(**result)
 
     # -- settings ---------------------------------------------------------
 
