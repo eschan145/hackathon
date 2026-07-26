@@ -1,57 +1,55 @@
-import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
-import { useEffect, useState } from "react";
-import Home from "./pages/Home";
-import Task from "./pages/Task";
-import History from "./pages/History";
+import { useEffect } from "react";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import Sidebar from "./components/Sidebar";
+import QuickAddModal from "./components/QuickAddModal";
+import Tasks from "./pages/Tasks";
+import Overview from "./pages/Overview";
+import Chat from "./pages/Chat";
+import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
-import { TaskProvider } from "./TaskContext";
-import { eventSocket } from "./hooks/useEventSocket";
+import { StoreProvider, useStore } from "./store";
 
-function NavBar() {
-  const [connected, setConnected] = useState(eventSocket.isConnected);
+/** Cmd/Ctrl+K toggles Quick Add from anywhere. */
+function Shortcuts() {
+  const { setQuickAddOpen } = useStore();
 
   useEffect(() => {
-    eventSocket.connect();
-    return eventSocket.onConnectionChange(setConnected);
-  }, []);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setQuickAddOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setQuickAddOpen]);
 
-  return (
-    <div className="navbar">
-      <span className="brand">Assistant</span>
-      <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
-        Home
-      </NavLink>
-      <NavLink to="/task" className={({ isActive }) => (isActive ? "active" : "")}>
-        Task
-      </NavLink>
-      <NavLink to="/history" className={({ isActive }) => (isActive ? "active" : "")}>
-        History
-      </NavLink>
-      <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
-        Settings
-      </NavLink>
-      <div className="conn-status">
-        <span className={`conn-dot ${connected ? "connected" : ""}`} />
-        {connected ? "Connected" : "Disconnected"}
-      </div>
-    </div>
-  );
+  return null;
 }
 
 export default function App() {
   return (
-    <TaskProvider>
+    <StoreProvider>
       <HashRouter>
+        <Shortcuts />
         <div className="app-shell">
-          <NavBar />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/task" element={<Task />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          <Sidebar />
+          <main className="main">
+            <div className="surface">
+              <Routes>
+                <Route path="/" element={<Navigate to="/tasks" replace />} />
+                <Route path="/tasks" element={<Tasks />} />
+                <Route path="/overview" element={<Overview />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/chat/:taskId" element={<Chat />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/tasks" replace />} />
+              </Routes>
+            </div>
+          </main>
         </div>
+        <QuickAddModal />
       </HashRouter>
-    </TaskProvider>
+    </StoreProvider>
   );
 }

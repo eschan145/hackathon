@@ -19,26 +19,44 @@ export type StepStatus =
   | "skipped"
   | string;
 
+/** core.models.TaskState — uppercase on the wire. */
+export type TaskState =
+  | "RECEIVED"
+  | "PLANNING"
+  | "EXECUTING"
+  | "VERIFYING"
+  | "REPLANNING"
+  | "COMPLETED"
+  | "FAILED"
+  | "AWAITING_APPROVAL"
+  | string;
+
 export interface TaskStep {
   id: string;
   description: string;
   status: StepStatus;
   risk_level?: RiskLevel;
   depends_on?: string[];
+  success_criteria?: string;
+  tool_hint?: string;
 }
 
-export interface TaskSummary {
+/**
+ * Flattened task shape used everywhere in the UI.
+ *
+ * The backend serializes core.models.Task, which nests steps under
+ * `graph.steps`, names the identifier `id` (not `task_id`), and sends
+ * `created_at` as a float epoch. normalizeTask() flattens that so no
+ * component has to know about the nesting.
+ */
+export interface TaskRecord {
   task_id: string;
   objective: string;
-  state: string;
-  source?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface TaskDetail extends TaskSummary {
-  steps?: TaskStep[];
-  history?: Array<Record<string, unknown>>;
+  state: TaskState;
+  source: string;
+  created_at: number | null;
+  steps: TaskStep[];
+  history: Array<Record<string, unknown>>;
 }
 
 export interface CreateObjectiveRequest {
@@ -94,6 +112,38 @@ class ApiError extends Error {
   }
 }
 
+function normalizeStep(raw: Record<string, any>): TaskStep {
+  return {
+    id: String(raw.id ?? raw.step_id ?? ""),
+    description: String(raw.description ?? raw.id ?? ""),
+    status: String(raw.status ?? "pending"),
+    risk_level: raw.risk_level,
+    depends_on: raw.depends_on ?? [],
+    success_criteria: raw.success_criteria ?? "",
+    tool_hint: raw.tool_hint ?? "",
+  };
+}
+
+/** Accepts either the nested core.models.Task shape or an already-flat one. */
+export function normalizeTask(raw: Record<string, any>): TaskRecord {
+  const rawSteps: Array<Record<string, any>> = raw?.graph?.steps ?? raw?.steps ?? [];
+  const createdAt = raw?.created_at;
+  return {
+    task_id: String(raw?.id ?? raw?.task_id ?? ""),
+    objective: String(raw?.objective ?? raw?.graph?.objective ?? "Untitled objective"),
+    state: String(raw?.state ?? "RECEIVED"),
+    source: String(raw?.source ?? "gui"),
+    created_at:
+      typeof createdAt === "number"
+        ? createdAt
+        : typeof createdAt === "string"
+          ? Date.parse(createdAt) / 1000 || null
+          : null,
+    steps: rawSteps.map(normalizeStep),
+    history: raw?.history ?? [],
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BACKEND_HTTP_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -111,27 +161,28 @@ export const api = {
   createObjective(body: CreateObjectiveRequest): Promise<CreateObjectiveResponse> {
     return request("/api/objectives", { method: "POST", body: JSON.stringify(body) });
   },
-  async listTasks(): Promise<TaskSummary[]> {
+  async listTasks(): Promise<TaskRecord[]> {
     // backend/main.py's GET /api/tasks returns {"tasks": [...]}, not a bare array.
-    const res = await request<{ tasks: TaskSummary[] }>("/api/tasks");
-    return res.tasks;
+    const res = await request<{ tasks: Array<Record<string, any>> }>("/api/tasks");
+    return (res.tasks ?? []).map(normalizeTask);
   },
-  getTask(taskId: string): Promise<TaskDetail> {
-    return request(`/api/tasks/${encodeURIComponent(taskId)}`);
+  async getTask(taskId: string): Promise<TaskRecord> {
+    const raw = await request<Record<string, any>>(`/api/tasks/${encodeURIComponent(taskId)}`);
+    return normalizeTask(raw);
   },
-  approveStep(taskId: string, body: ApproveStepRequest): Promise<void> {
+  approveStep(taskId: string, body: ApproveStepRequest): Promise<{ resolved: boolean }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}/approve`, {
       method: "POST",
       body: JSON.stringify(body),
     });
   },
-  cancelTask(taskId: string): Promise<void> {
+  cancelTask(taskId: string): Promise<{ cancelled: boolean }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
   },
   getSettings(): Promise<SettingsPayload> {
     return request("/api/settings");
   },
-  saveSettings(body: SettingsPayload): Promise<void> {
+  saveSettings(body: SettingsPayload): Promise<SettingsPayload> {
     return request("/api/settings", { method: "POST", body: JSON.stringify(body) });
   },
 };

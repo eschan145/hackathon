@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import PageHeader from "../components/PageHeader";
+import { CloseIcon, PlusIcon } from "../lib/icons";
 import { api, SettingsPayload } from "../api/client";
 
 const DEFAULT_SETTINGS: SettingsPayload = {
@@ -18,13 +20,13 @@ const BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsPayload>(DEFAULT_SETTINGS);
   const [newDir, setNewDir] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     api
       .getSettings()
-      .then((s) => setSettings(s))
+      .then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s }))
       .catch(() => {
         // backend unavailable yet - keep defaults
       })
@@ -48,87 +50,111 @@ export default function Settings() {
   async function save() {
     try {
       await api.saveSettings(settings);
-      setStatus("Settings saved.");
+      setStatus({ kind: "ok", text: "Settings saved." });
     } catch (e) {
-      setStatus(
-        e instanceof Error ? `Failed to save: ${e.message}` : "Failed to save settings.",
-      );
+      setStatus({
+        kind: "err",
+        text: e instanceof Error ? `Failed to save: ${e.message}` : "Failed to save settings.",
+      });
     }
   }
 
   return (
-    <div className="page">
-      <h1 className="page-title">Settings</h1>
-      {!loaded && <div className="empty-state">Loading settings...</div>}
+    <>
+      <PageHeader
+        title="Settings"
+        subtitle="Execution backend, local models, and filesystem guardrails"
+        help={[
+          "Control backend selects which automation layer executes steps.",
+          "Models run locally — names must match what's loaded on the DGX Spark.",
+          "Allow-listed directories bound where the agent may read and write.",
+        ]}
+      />
 
-      <div className="settings-section panel">
-        <div className="settings-row">
-          <span className="label" title="OpenClaw is the real working control backend for this hackathon build">
-            Control backend
-          </span>
-          <select
-            value={settings.backend}
-            onChange={(e) => setSettings((s) => ({ ...s, backend: e.target.value }))}
-          >
-            {BACKEND_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="page-body settings">
+        {!loaded && <div className="banner subtle">Loading settings…</div>}
 
-        <div className="settings-row">
-          <span className="label">Planning model</span>
-          <input
-            type="text"
-            value={settings.planning_model}
-            onChange={(e) => setSettings((s) => ({ ...s, planning_model: e.target.value }))}
-          />
-        </div>
+        <section className="panel">
+          <h2 className="panel-title">Execution</h2>
+          <div className="setting-row">
+            <div className="setting-copy">
+              <span className="setting-name">Control backend</span>
+              <span className="setting-hint">Layer used to drive the desktop</span>
+            </div>
+            <select
+              value={settings.backend}
+              onChange={(e) => setSettings((s) => ({ ...s, backend: e.target.value }))}
+            >
+              {BACKEND_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className="settings-row">
-          <span className="label">Verification model</span>
-          <input
-            type="text"
-            value={settings.verification_model}
-            onChange={(e) => setSettings((s) => ({ ...s, verification_model: e.target.value }))}
-          />
+          <div className="setting-row">
+            <div className="setting-copy">
+              <span className="setting-name">Planning model</span>
+              <span className="setting-hint">Decomposes objectives into a step DAG</span>
+            </div>
+            <input
+              value={settings.planning_model}
+              onChange={(e) => setSettings((s) => ({ ...s, planning_model: e.target.value }))}
+            />
+          </div>
+
+          <div className="setting-row">
+            <div className="setting-copy">
+              <span className="setting-name">Verification model</span>
+              <span className="setting-hint">Confirms each step actually succeeded</span>
+            </div>
+            <input
+              value={settings.verification_model}
+              onChange={(e) => setSettings((s) => ({ ...s, verification_model: e.target.value }))}
+            />
+          </div>
+        </section>
+
+        <section className="panel">
+          <h2 className="panel-title">Allow-listed directories</h2>
+          <div className="dir-list">
+            {settings.allowed_directories.length === 0 ? (
+              <p className="setting-hint">No directories allow-listed yet.</p>
+            ) : (
+              settings.allowed_directories.map((dir) => (
+                <div className="dir-row" key={dir}>
+                  <code>{dir}</code>
+                  <button className="icon-btn sm" onClick={() => removeDirectory(dir)} aria-label="Remove">
+                    <CloseIcon size={15} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="dir-add">
+            <input
+              placeholder="/Users/you/Documents"
+              value={newDir}
+              onChange={(e) => setNewDir(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addDirectory();
+              }}
+            />
+            <button className="btn-ghost" onClick={addDirectory}>
+              <PlusIcon size={14} />
+              Add
+            </button>
+          </div>
+        </section>
+
+        <div className="settings-actions">
+          <button className="btn-primary" onClick={save}>
+            Save Settings
+          </button>
+          {status && <span className={`save-status ${status.kind}`}>{status.text}</span>}
         </div>
       </div>
-
-      <div className="settings-section panel">
-        <span className="field-label">Allow-listed directories:</span>
-        <div className="dir-list">
-          {settings.allowed_directories.length === 0 ? (
-            <div className="empty-state">No directories allow-listed yet.</div>
-          ) : (
-            settings.allowed_directories.map((dir) => (
-              <div className="dir-row" key={dir}>
-                <span className="path">{dir}</span>
-                <button onClick={() => removeDirectory(dir)}>Remove</button>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="add-dir-row">
-          <input
-            type="text"
-            placeholder="C:\path\to\allow"
-            value={newDir}
-            onChange={(e) => setNewDir(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") addDirectory();
-            }}
-          />
-          <button onClick={addDirectory}>Add</button>
-        </div>
-      </div>
-
-      <button className="primary" onClick={save}>
-        Save Settings
-      </button>
-      <div className="save-status">{status}</div>
-    </div>
+    </>
   );
 }
