@@ -73,6 +73,7 @@ class Orchestrator:
         max_retries: int = 3,
         max_replans: int = 2,
         max_concurrency: int = 4,
+        max_actions: int = 60,
     ) -> None:
         self.planner = planner
         self.executor = executor
@@ -81,6 +82,12 @@ class Orchestrator:
         self.event_bus = event_bus or EventBus()
         self.max_retries = max_retries
         self.max_replans = max_replans
+        # Safety cap on the total number of Steps the agentic
+        # Planner.next_actions loop (see run_task) is allowed to append
+        # over the lifetime of a task, so a planner that never converges
+        # can't spin forever burning model calls.
+        self.max_actions = max_actions
+        self._actions_run = 0
         self._sem = asyncio.Semaphore(max_concurrency)
         self._breaker = CircuitBreaker()
         # step_id -> Future[bool] for HIGH risk steps awaiting a human
@@ -155,12 +162,63 @@ class Orchestrator:
         replans_used = 0
         awaiting_approval = False
 
-        while self._has_pending_work(graph) and not awaiting_approval:
+        # NOTE: this used to be `while self._has_pending_work(graph) and not
+        # awaiting_approval:`, with a bare `break` whenever `_ready_steps`
+        # came back empty. That collapsed two different situations into
+        # one exit: a real dependency deadlock among pre-existing steps,
+        # and "nothing left to do" (which used to only mean "the DAG
+        # finished"). The condition now lives inside the loop body so we
+        # can tell those apart and, in the second case, give the agentic
+        # Planner.next_actions a chance to contribute more work before
+        # falling through to completion — including when `graph.steps`
+        # starts out empty (an agentic Planner may not pre-compute a DAG
+        # at all), which the old `_has_pending_work`-gated while condition
+        # would never even have entered the loop for.
+        while not awaiting_approval:
             ready = self._ready_steps(graph)
             if not ready:
-                # Nothing ready but work remains -> either a dependency
-                # deadlock (treat as failure) or steps are mid-flight.
-                break
+                if self._has_pending_work(graph):
+                    # Nothing ready but pending/running steps remain ->
+                    # a genuine dependency deadlock among pre-existing
+                    # steps. Preserve the old behavior: bail out to the
+                    # completion/failure checks below.
+                    break
+
+                # Nothing ready and nothing pending/running either -> the
+                # pre-computed DAG (if any) is fully resolved but the
+                # objective hasn't been declared complete. This is the
+                # agentic planner's turn to contribute more work based on
+                # freshly-observed state (ARCHITECTURE.md's ReAct-style
+                # loop) instead of a single up-front plan.
+                if self._actions_run >= self.max_actions:
+                    await self._transition(task, "FAILED", reason="max_actions_exhausted")
+                    self._emit(EventType.TASK_FAILED, task, reason="max_actions_exhausted")
+                    return task
+
+                new_steps = await self.planner.next_actions(task)
+                if not new_steps:
+                    # An empty list alone can't distinguish "objective
+                    # genuinely complete" (done()) from "agent gave up"
+                    # (fail()) or a stalled turn — planning/vision_agent_planner.py
+                    # documents that it always records a task.history entry
+                    # first (kind in {"agent_done","agent_fail","agent_stall"},
+                    # with a "success" bool) precisely so this can be routed
+                    # correctly instead of reporting an abandoned objective
+                    # as completed. Checked defensively (plain dict .get())
+                    # so core/ doesn't need to import planning/.
+                    last = task.history[-1] if task.history else {}
+                    if last.get("kind") in ("agent_fail", "agent_stall") and last.get("success") is False:
+                        reason = last.get("reason") or f"planner_stopped:{last.get('kind')}"
+                        await self._transition(task, "FAILED", reason=reason)
+                        self._emit(EventType.TASK_FAILED, task, reason=reason)
+                        return task
+                    # Otherwise the planner says the objective is complete
+                    # -> fall through to the existing completion checks.
+                    break
+
+                graph.steps.extend(new_steps)
+                self._actions_run += len(new_steps)
+                continue
 
             # Partition into concurrently-runnable vs exclusive steps.
             # Exclusive steps run alone to avoid contending for the same
@@ -206,6 +264,20 @@ class Orchestrator:
         if any(s.status == "failed" for s in graph.steps):
             await self._transition(task, "FAILED")
             self._emit(EventType.TASK_FAILED, task, reason="unresolved_failed_steps")
+            return task
+
+        if any(s.status in ("pending", "ready", "running") for s in graph.steps):
+            # We only reach here by breaking out of the main loop, which
+            # happens either because the planner legitimately signaled
+            # completion (next_actions()/create_plan() left no non-terminal
+            # steps behind) or because _ready_steps() came back empty while
+            # pending/running steps remained -- a genuine dependency
+            # deadlock (e.g. a Step depending on an id that no longer
+            # exists in the graph, which a buggy Planner.replan() could
+            # produce). Steps stuck in a non-terminal status here means the
+            # latter: don't report success for work that never actually ran.
+            await self._transition(task, "FAILED", reason="dependency_deadlock")
+            self._emit(EventType.TASK_FAILED, task, reason="dependency_deadlock")
             return task
 
         summary = self._synthesize_summary(task, graph)
@@ -261,7 +333,13 @@ class Orchestrator:
 
                 if success:
                     step.status = "verified"
-                    self._emit(EventType.STEP_VERIFIED, task, step_id=step.id, details=details)
+                    self._emit(
+                        EventType.STEP_VERIFIED,
+                        task,
+                        step_id=step.id,
+                        details=details,
+                        screenshot_ref=action_result.screenshot_ref,
+                    )
                     await self._transition(task, "EXECUTING", step_id=step.id)
                     return "ok"
 
@@ -273,6 +351,7 @@ class Orchestrator:
                     step_id=step.id,
                     details=details,
                     retry_count=step.retry_count,
+                    screenshot_ref=action_result.screenshot_ref,
                 )
 
                 if step.retry_count >= self.max_retries or self._breaker.is_tripped(step):

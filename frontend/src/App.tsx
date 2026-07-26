@@ -6,6 +6,53 @@ import History from "./pages/History";
 import Settings from "./pages/Settings";
 import { TaskProvider } from "./TaskContext";
 import { eventSocket } from "./hooks/useEventSocket";
+import { api, ModelStatus } from "./api/client";
+
+// Re-poll occasionally rather than fetch once: the backend caches this for
+// 30s on its side anyway (see planning/openclaw_client.py), so this is just
+// keeping a long-lived Electron window's badge honest if config/models.yaml
+// changes and the backend restarts, without hammering the openclaw CLI.
+const MODEL_STATUS_POLL_MS = 60_000;
+
+function ModelStatusBadge() {
+  const [status, setStatus] = useState<ModelStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      api
+        .getModelStatus()
+        .then((s) => {
+          if (!cancelled) setStatus(s);
+        })
+        .catch(() => {
+          if (!cancelled) setStatus(null);
+        });
+    }
+    load();
+    const id = setInterval(load, MODEL_STATUS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!status) {
+    return <div className="model-status unknown">Model: unknown</div>;
+  }
+
+  const modeLabel = status.mode === "local" ? "Local" : status.mode === "cloud" ? "Cloud" : "Unknown";
+
+  return (
+    <div
+      className={`model-status ${status.mode}`}
+      title={status.error ? `${status.display_name} — ${status.error}` : status.display_name}
+    >
+      <span className={`model-dot ${status.mode}`} />
+      {status.display_name} · {modeLabel}
+    </div>
+  );
+}
 
 function NavBar() {
   const [connected, setConnected] = useState(eventSocket.isConnected);
@@ -30,9 +77,12 @@ function NavBar() {
       <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
         Settings
       </NavLink>
-      <div className="conn-status">
-        <span className={`conn-dot ${connected ? "connected" : ""}`} />
-        {connected ? "Connected" : "Disconnected"}
+      <div className="navbar-right">
+        <ModelStatusBadge />
+        <div className="conn-status">
+          <span className={`conn-dot ${connected ? "connected" : ""}`} />
+          {connected ? "Connected" : "Disconnected"}
+        </div>
       </div>
     </div>
   );

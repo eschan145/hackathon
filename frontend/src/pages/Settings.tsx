@@ -2,17 +2,21 @@ import { useEffect, useState } from "react";
 import { api, SettingsPayload } from "../api/client";
 
 const DEFAULT_SETTINGS: SettingsPayload = {
-  backend: "Native",
-  planning_model: "llama-3.1-70b-instruct",
-  verification_model: "nemotron-vision-small",
+  model: "claude-cli/claude-sonnet-5",
+  thinking_level: "low",
+  show_reasoning: true,
   allowed_directories: [],
 };
 
-const BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "Native", label: "Native" },
-  { value: "OpenClaw", label: "OpenClaw (real working backend)" },
-  { value: "NemoClaw", label: "NemoClaw" },
-  { value: "OpenShell", label: "OpenShell" },
+const THINKING_LEVEL_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "off", label: "Off" },
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "X-High" },
+  { value: "adaptive", label: "Adaptive" },
+  { value: "max", label: "Max" },
 ];
 
 export default function Settings() {
@@ -63,14 +67,30 @@ export default function Settings() {
 
       <div className="settings-section panel">
         <div className="settings-row">
-          <span className="label" title="OpenClaw is the real working control backend for this hackathon build">
-            Control backend
-          </span>
-          <select
-            value={settings.backend}
-            onChange={(e) => setSettings((s) => ({ ...s, backend: e.target.value }))}
+          <span
+            className="label"
+            title="OpenClaw model id (see `openclaw models list`); swap for a locally-imported model later without code changes"
           >
-            {BACKEND_OPTIONS.map((opt) => (
+            Model
+          </span>
+          <input
+            type="text"
+            value={settings.model}
+            onChange={(e) => setSettings((s) => ({ ...s, model: e.target.value }))}
+          />
+        </div>
+        <div className="field-hint">
+          OpenClaw model id (see <code>openclaw models list</code>); swap for a locally-imported
+          model later without code changes.
+        </div>
+
+        <div className="settings-row">
+          <span className="label">Thinking level</span>
+          <select
+            value={settings.thinking_level}
+            onChange={(e) => setSettings((s) => ({ ...s, thinking_level: e.target.value }))}
+          >
+            {THINKING_LEVEL_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -79,20 +99,11 @@ export default function Settings() {
         </div>
 
         <div className="settings-row">
-          <span className="label">Planning model</span>
+          <span className="label">Show reasoning</span>
           <input
-            type="text"
-            value={settings.planning_model}
-            onChange={(e) => setSettings((s) => ({ ...s, planning_model: e.target.value }))}
-          />
-        </div>
-
-        <div className="settings-row">
-          <span className="label">Verification model</span>
-          <input
-            type="text"
-            value={settings.verification_model}
-            onChange={(e) => setSettings((s) => ({ ...s, verification_model: e.target.value }))}
+            type="checkbox"
+            checked={settings.show_reasoning}
+            onChange={(e) => setSettings((s) => ({ ...s, show_reasoning: e.target.checked }))}
           />
         </div>
       </div>
@@ -114,7 +125,7 @@ export default function Settings() {
         <div className="add-dir-row">
           <input
             type="text"
-            placeholder="C:\path\to\allow"
+            placeholder="~/Documents"
             value={newDir}
             onChange={(e) => setNewDir(e.target.value)}
             onKeyDown={(e) => {

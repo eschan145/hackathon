@@ -1,9 +1,9 @@
 """FastAPI app: HTTP + WebSocket API for the Electron/React frontend.
 
-Reuses the exact subsystem-wiring pattern from gui/main.py's
-build_orchestrator() (lazy-imported real planner/executor/verifier/memory
-with stub fallbacks) so this backend works standalone even before every
-subsystem lands, exactly like the Kivy GUI does.
+Wires up the Orchestrator via backend/orchestrator_factory.py's
+build_orchestrator() (real VisionAgentPlanner/ActionExecutor/
+DeterministicVerifier, with only Memory falling back to an in-process stub
+if memory/'s sqlite dir isn't set up yet).
 
 Run with:
     python backend/main.py
@@ -21,13 +21,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 # Allow running as `python backend/main.py` (script, not module) by ensuring
-# the project root is on sys.path so `core`, `gui`, etc. resolve.
+# the project root is on sys.path so `core`, `backend`, etc. resolve.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 try:
     import yaml
@@ -38,13 +39,16 @@ except Exception:  # pragma: no cover
 
 from core.events import Event, EventType
 from core.models import Task
-from gui.main import build_orchestrator
+from planning.openclaw_client import get_model_status
+from vision.capture import default_frame_store
 
+from backend.orchestrator_factory import build_orchestrator
 from backend.schemas import (
     ApprovalRequest,
     ApprovalResponse,
     CancelResponse,
     EventMessage,
+    ModelStatusResponse,
     ObjectiveRequest,
     ObjectiveResponse,
     SettingsModel,
@@ -60,14 +64,19 @@ PORT = 8765
 SETTINGS_PATH = _PROJECT_ROOT / "config" / "user_settings.yaml"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "backend": "Native",
-    "planning_model": "llama-3.1-70b-instruct",
-    "verification_model": "nemotron-vision-small",
+    "model": "claude-cli/claude-sonnet-5",
+    "thinking_level": "low",
+    "show_reasoning": True,
     "allowed_directories": [
         str(Path.home() / "Documents"),
         str(Path.home() / "Downloads"),
     ],
 }
+
+# Base URL the frontend can reach this backend at, used to rewrite bare
+# frame ref_ids into fully-qualified, browser-loadable image URLs before
+# broadcasting events over the websocket (see _event_to_message below).
+FRAMES_BASE_URL = f"http://{HOST}:{PORT}/api/frames"
 
 ALL_EVENT_TYPES = list(EventType)
 
@@ -100,10 +109,29 @@ class ConnectionManager:
 
 
 def _event_to_message(event: Event) -> dict[str, Any]:
+    payload = dict(event.payload)
+
+    # Rewrite a bare frame ref_id into a fully-qualified URL the frontend
+    # can drop straight into an <img src> (see Task.tsx's
+    # maybeUpdatePreview(), which reads payload.screenshot_ref verbatim).
+    # core/orchestrator.py's _run_step() threads ActionResult.screenshot_ref
+    # into its STEP_VERIFIED/STEP_FAILED self._emit(...) calls.
+    screenshot_ref = payload.get("screenshot_ref")
+    if isinstance(screenshot_ref, str) and screenshot_ref:
+        payload["screenshot_ref"] = f"{FRAMES_BASE_URL}/{screenshot_ref}.png"
+
+    details = payload.get("details")
+    if isinstance(details, dict):
+        nested_ref = details.get("screenshot_ref")
+        if isinstance(nested_ref, str) and nested_ref:
+            details = dict(details)
+            details["screenshot_ref"] = f"{FRAMES_BASE_URL}/{nested_ref}.png"
+            payload["details"] = details
+
     return {
         "type": event.type.value if isinstance(event.type, EventType) else str(event.type),
         "task_id": event.task_id,
-        "payload": event.payload,
+        "payload": payload,
         "timestamp": event.timestamp,
     }
 
@@ -119,6 +147,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Serve saved vision frames so the frontend's screen-preview <img> can
+    # load them directly, e.g. a ref_id "1234_abcd1234" is servable at
+    # /api/frames/1234_abcd1234.png (FrameStore.save() writes "{ref_id}.png").
+    default_frame_store.directory.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/api/frames",
+        StaticFiles(directory=str(default_frame_store.directory)),
+        name="frames",
+    )
+
     @app.on_event("startup")
     async def _startup() -> None:
         orchestrator, memory = build_orchestrator()
@@ -130,8 +168,7 @@ def create_app() -> FastAPI:
         app.state.connections = ConnectionManager()
 
         # Bind the bus to *this* running loop so publish()/publish_threadsafe
-        # both work correctly (mirrors gui/app.py's bind_loop on its
-        # background loop; here the orchestrator runs on FastAPI's own loop).
+        # both work correctly on FastAPI's own event loop.
         app.state.event_bus.bind_loop(asyncio.get_running_loop())
 
         async def _on_event(event: Event) -> None:
@@ -265,6 +302,13 @@ def create_app() -> FastAPI:
         else:
             raise HTTPException(status_code=500, detail="PyYAML not installed; cannot persist settings")
         return settings
+
+    # -- model status ------------------------------------------------------
+
+    @app.get("/api/model-status", response_model=ModelStatusResponse)
+    async def model_status() -> ModelStatusResponse:
+        status = await get_model_status()
+        return ModelStatusResponse(**status)
 
     # -- websocket ----------------------------------------------------------
 

@@ -44,15 +44,29 @@ class Planner(Protocol):
         """
         ...
 
+    async def next_actions(self, task: Task) -> list[Step]:
+        """Return the next chunk of Steps to append and run, or [] if done.
+
+        Called by the Orchestrator whenever `task.graph` has no pending/
+        ready/running work left but the objective hasn't been declared
+        complete. This is the hook for planners that decide one small
+        batch of actions at a time based on freshly-observed state (e.g.
+        a vision-grounded agent loop) rather than pre-computing a full DAG
+        up front. Returning an empty list tells the Orchestrator the
+        objective is finished; the returned Steps should chain off the
+        current last step via `depends_on` so they run in order.
+        """
+        ...
+
 
 @runtime_checkable
 class Executor(Protocol):
     """Performs a single Step's action against the real desktop/OS/SaaS.
 
-    Implemented by execution/. Resolves Step.description /
-    Step.tool_hint to a concrete ControlBackend action (native input,
-    OpenClaw/NemoClaw grounding, or an MCP tool call) and returns evidence
-    for Verification.
+    Implemented by execution/. Resolves Step.action (a parsed
+    planning.action_dsl.Action, decided by the vision-grounded Planner) to
+    a concrete NativeInputBackend call via execution/interpreter.py, and
+    returns evidence for Verification.
     """
 
     async def execute(self, step: Step, task: Task) -> ActionResult:

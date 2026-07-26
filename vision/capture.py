@@ -24,17 +24,7 @@ except ImportError:  # pragma: no cover - optional heavy dep
     # capture_screen falls back to a blank placeholder image so the rest of
     # the pipeline (OCR/VLM/diff) can still be exercised in dev/CI.
 
-try:
-    import pygetwindow as gw  # type: ignore
-except ImportError:  # pragma: no cover - optional, Windows-friendly
-    gw = None  # TODO: `pip install pygetwindow` for active-window bounds.
-
-try:
-    from pywinauto import Desktop  # type: ignore
-except ImportError:  # pragma: no cover - optional, Windows-only
-    Desktop = None  # TODO: `pip install pywinauto` (Windows only) as a
-    # more robust alternative to pygetwindow for window bounds.
-
+from vision.windows import get_window_geometry
 
 Region = tuple[int, int, int, int]  # (left, top, width, height)
 
@@ -62,27 +52,13 @@ def capture_screen(region: Optional[Region] = None) -> Image.Image:
 
 
 def _active_window_region() -> Optional[Region]:
-    """Best-effort active-window bounding box, or None if unavailable."""
-    if gw is not None:
-        try:
-            win = gw.getActiveWindow()
-            if win is not None:
-                return (win.left, win.top, win.width, win.height)
-        except Exception:
-            pass  # fall through to pywinauto / None
+    """Best-effort active-window bounding box, or None if unavailable.
 
-    if Desktop is not None:
-        try:
-            # TODO: pywinauto's "active window" concept differs by backend
-            # (win32 vs uia); this is a best-effort stub, not a robust
-            # cross-app implementation.
-            top_window = Desktop(backend="uia").top_window()
-            rect = top_window.rectangle()
-            return (rect.left, rect.top, rect.width(), rect.height())
-        except Exception:
-            pass
-
-    return None
+    Delegates to vision.windows.get_window_geometry() (wmctrl/xdotool
+    under the hood), which already degrades to None if those tools aren't
+    on PATH or the call fails for any reason.
+    """
+    return get_window_geometry()
 
 
 def capture_active_window() -> Image.Image:

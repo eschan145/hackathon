@@ -40,9 +40,9 @@ class CancelResponse(BaseModel):
 
 
 class SettingsModel(BaseModel):
-    backend: str = "Native"
-    planning_model: str = "llama-3.1-70b-instruct"
-    verification_model: str = "nemotron-vision-small"
+    model: str = "claude-cli/claude-sonnet-5"
+    thinking_level: str = "low"
+    show_reasoning: bool = True
     allowed_directories: list[str] = Field(default_factory=list)
 
     class Config:
@@ -56,3 +56,20 @@ class EventMessage(BaseModel):
     task_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
     timestamp: float
+
+
+class ModelStatusResponse(BaseModel):
+    """Answers the frontend's "what mode is this running in" question.
+
+    Backed by planning.openclaw_client.get_model_status(), which asks
+    OpenClaw's own model catalog (not a guess from the model string)
+    whether the configured model is cloud-hosted or local.
+    """
+
+    model: str
+    provider: str
+    display_name: str
+    local: Optional[bool] = None
+    available: Optional[bool] = None
+    mode: str = "unknown"  # "cloud" | "local" | "unknown"
+    error: Optional[str] = None
