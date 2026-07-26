@@ -35,6 +35,17 @@ from core.event_bus import EventBus
 from core.events import Event, EventType
 from core.orchestrator import Orchestrator
 
+# Importing these registers HomeScreen/TaskScreen/HistoryScreen/SettingsScreen
+# and StepRow/ApprovalModal with Kivy's Factory *before* Builder.load_file()
+# parses assistant.kv below — required, since the kv file references these
+# class names and Factory only knows about classes that have been imported.
+from gui.screens.home import HomeScreen  # noqa: F401
+from gui.screens.task import TaskScreen  # noqa: F401
+from gui.screens.history import HistoryScreen  # noqa: F401
+from gui.screens.settings import SettingsScreen  # noqa: F401
+from gui.widgets.step_row import StepRow  # noqa: F401
+from gui.widgets.approval_modal import ApprovalModal  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 KV_PATH = Path(__file__).resolve().parent / "assistant.kv"
