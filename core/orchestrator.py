@@ -83,6 +83,13 @@ class Orchestrator:
         self.max_replans = max_replans
         self._sem = asyncio.Semaphore(max_concurrency)
         self._breaker = CircuitBreaker()
+        # step_id -> Future[bool] for HIGH risk steps awaiting a human
+        # approve/deny decision (see resolve_approval()). This is the
+        # resume hook that was previously a TODO: instead of _run_step
+        # returning "await_approval" and run_task giving up, the step's
+        # coroutine now blocks on this future until an API/GUI caller
+        # resolves it, then continues (or fails->replans) accordingly.
+        self._pending_approvals: dict[str, "asyncio.Future[bool]"] = {}
 
     # -- helpers ---------------------------------------------------------
 
@@ -209,10 +216,28 @@ class Orchestrator:
             if step.risk_level == "high":
                 # High-risk actions require human approval before dispatch
                 # unless a pre-authorization mechanism (not modeled here)
-                # says otherwise. Real approval-handling GUI hook is a TODO
-                # for the gui/ subsystem; we surface the event and stop.
+                # says otherwise. Surface the event, transition to
+                # AWAITING_APPROVAL, and block this step's coroutine on a
+                # Future that resolve_approval() resolves once the
+                # GUI/API caller supplies the user's decision.
                 self._emit(EventType.APPROVAL_REQUIRED, task, step_id=step.id)
-                return "await_approval"
+                await self._transition(task, "AWAITING_APPROVAL", step_id=step.id)
+                fut: "asyncio.Future[bool]" = self._pending_approvals.setdefault(
+                    step.id, asyncio.get_event_loop().create_future()
+                )
+                approved = await fut
+                self._pending_approvals.pop(step.id, None)
+                await self._transition(task, "EXECUTING", step_id=step.id)
+                if not approved:
+                    step.status = "failed"
+                    self._emit(
+                        EventType.STEP_FAILED,
+                        task,
+                        step_id=step.id,
+                        details={"reason": "user_denied_approval"},
+                    )
+                    return "replan"
+                # else: approved -> fall through and execute normally below.
 
             while True:
                 if self._breaker.is_tripped(step):
@@ -245,6 +270,22 @@ class Orchestrator:
                     return "replan"
                 # else: loop and retry (exponential backoff)
                 await asyncio.sleep(min(2 ** step.retry_count, 30))
+
+    async def resolve_approval(self, task_id: str, step_id: str, approved: bool) -> bool:
+        """Resume a step blocked at AWAITING_APPROVAL with the user's decision.
+
+        Called by the API/GUI layer in response to a human approve/deny
+        action on a HIGH risk step (ARCHITECTURE.md sections 7 and 10).
+        Returns True if a pending approval for step_id was found and
+        resolved, False if there was nothing waiting (already resolved,
+        unknown step, or task_id mismatch is not checked here since
+        step ids are unique per graph).
+        """
+        fut = self._pending_approvals.get(step_id)
+        if fut is None or fut.done():
+            return False
+        fut.set_result(approved)
+        return True
 
     async def _replan(self, task: Task, graph: TaskGraph, failed_step: Step) -> None:
         await self._transition(task, "REPLANNING", step_id=failed_step.id)
