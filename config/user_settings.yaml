@@ -1,0 +1,7 @@
+allowed_directories:
+- /home/dell/Documents
+- /home/dell/Downloads
+approval_mode: auto
+model: ollama/qwen3-vl:30b-a3b
+show_reasoning: true
+thinking_level: "off"

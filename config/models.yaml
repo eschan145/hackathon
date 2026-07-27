@@ -8,6 +8,6 @@
 # To use a different model: `ollama pull <model>`, then change `model` to
 # whatever id `openclaw models list` shows for it.
 model: "ollama/qwen3-vl:30b-a3b"
-thinking: "low"              # off|minimal|low|medium|high|xhigh|adaptive|max
+thinking: "off"              # off|minimal|low|medium|high|xhigh|adaptive|max
 timeout_seconds: 120
 reasoning_visible: true      # ask the model to emit brief `# ...` reasoning lines

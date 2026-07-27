@@ -357,8 +357,12 @@ class Orchestrator:
                 if step.retry_count >= self.max_retries or self._breaker.is_tripped(step):
                     step.status = "failed"
                     return "replan"
-                # else: loop and retry (exponential backoff)
-                await asyncio.sleep(min(2 ** step.retry_count, 30))
+                # else: loop and retry. Short flat backoff, not exponential -
+                # these are blind mechanical re-attempts of the same action
+                # (DeterministicVerifier makes no model call either way), so
+                # the only thing worth waiting for is a moment of transient
+                # UI lag, not a real backend rate limit.
+                await asyncio.sleep(0.75)
 
     async def resolve_approval(self, task_id: str, step_id: str, approved: bool) -> bool:
         """Resume a step blocked at AWAITING_APPROVAL with the user's decision.

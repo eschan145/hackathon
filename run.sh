@@ -75,7 +75,11 @@ setup_local_models() {
 
     if ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
         echo -e "${GREEN}▶ Starting Ollama daemon...${NC}"
-        ollama serve >/dev/null 2>&1 &
+        # Keep the model resident indefinitely once loaded - the default
+        # ~5min idle unload means the first request after any pause pays a
+        # full cold-load of a ~45GB model again, which dwarfs normal
+        # per-turn latency.
+        OLLAMA_KEEP_ALIVE=-1 ollama serve >/dev/null 2>&1 &
 
         local retry_count=0
         while ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; do
