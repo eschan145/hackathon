@@ -75,6 +75,24 @@ setup_local_models() {
 
     if ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
         echo -e "${GREEN}▶ Starting Ollama daemon...${NC}"
+        # Perf tuning (no change to the model weights themselves):
+        # - OLLAMA_CONTEXT_LENGTH: qwen3-vl's native max is 262144, and Ollama
+        #   auto-sizes the KV cache to that on this box's large unified memory
+        #   unless capped, ballooning the loaded model from 19GB to 45GB and
+        #   slowing every load/reload. Our prompts (DSL grammar + condensed
+        #   history + screen state, occasionally one screenshot) are a couple
+        #   KB, so 32768 leaves generous headroom at a fraction of the memory.
+        # - OLLAMA_KV_CACHE_TYPE=q8_0: quantized KV cache, further shrinks the
+        #   loaded footprint (down to ~20GB) with no measurable decode-speed
+        #   cost at these prompt lengths.
+        # - OLLAMA_FLASH_ATTENTION=1: force on rather than leaving it on "auto".
+        # - OLLAMA_KEEP_ALIVE=30m: the default 5m unload meant any gap between
+        #   agent turns longer than that paid a ~10s reload penalty on the
+        #   next call - this is most of what "slow" felt like in practice.
+        OLLAMA_CONTEXT_LENGTH=32768 \
+        OLLAMA_KV_CACHE_TYPE=q8_0 \
+        OLLAMA_FLASH_ATTENTION=1 \
+        OLLAMA_KEEP_ALIVE=30m \
         ollama serve >/dev/null 2>&1 &
 
         local retry_count=0
@@ -95,6 +113,15 @@ setup_local_models() {
         ollama pull qwen3-vl:30b-a3b
     fi
     echo -e "${GREEN}✓ qwen3-vl:30b-a3b available${NC}"
+
+    # Cap the per-call generation length OpenClaw will request from this
+    # model (was 8192 tokens; this is a thinking-tagged checkpoint that
+    # always emits a hidden reasoning block before its answer, so an
+    # unbounded/very-high cap means an occasional turn can ramble for a
+    # long time before ever reaching its action lines). 1536 leaves plenty
+    # of room for reasoning + a handful of DSL action lines while bounding
+    # worst-case tail latency. Idempotent - safe to run on every start.
+    openclaw config set 'models.providers.ollama.models[0].maxTokens' 1536 --strict-json >/dev/null 2>&1 || true
 
     # Register the Ollama provider with OpenClaw (native integration, no
     # custom base-url plumbing needed)
