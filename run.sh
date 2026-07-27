@@ -114,15 +114,6 @@ setup_local_models() {
     fi
     echo -e "${GREEN}✓ qwen3-vl:30b-a3b available${NC}"
 
-    # Cap the per-call generation length OpenClaw will request from this
-    # model (was 8192 tokens; this is a thinking-tagged checkpoint that
-    # always emits a hidden reasoning block before its answer, so an
-    # unbounded/very-high cap means an occasional turn can ramble for a
-    # long time before ever reaching its action lines). 1536 leaves plenty
-    # of room for reasoning + a handful of DSL action lines while bounding
-    # worst-case tail latency. Idempotent - safe to run on every start.
-    openclaw config set 'models.providers.ollama.models[0].maxTokens' 1536 --strict-json >/dev/null 2>&1 || true
-
     # Register the Ollama provider with OpenClaw (native integration, no
     # custom base-url plumbing needed)
     echo -e "${GREEN}▶ Registering model with OpenClaw...${NC}"
