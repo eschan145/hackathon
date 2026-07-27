@@ -22,7 +22,7 @@ add more context so it performs better, and approve its draft for sending. Then 
 can schedule time in your calendar (potentially). Similar intent to Claude
 dispatch.
 
-For a hackathon, we are building an AI-powered automation that can control your
+Orchestratr is an AI-powered automation that can control your
 computer and do tasks for you. One big advantage is that it can run locally on the
 NVIDIA DGX Spark (a key requirement). Examples of what it should do:
 

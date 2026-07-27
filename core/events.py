@@ -24,6 +24,7 @@ class EventType(str, Enum):
 
     OBJECTIVE_RECEIVED = "objective_received"
     PLAN_GENERATED = "plan_generated"
+    PLANNING_NEXT_STEP = "planning_next_step"
     STEP_STARTED = "step_started"
     STEP_VERIFIED = "step_verified"
     STEP_FAILED = "step_failed"

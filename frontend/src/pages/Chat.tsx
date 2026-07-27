@@ -329,6 +329,7 @@ function friendlyLead(lead: string): string {
   if (value.includes("execut")) return "Working on the next step";
   if (value.includes("verif")) return "Checking the result";
   if (value.includes("replan")) return "Adjusting the approach";
+  if (value.includes("plann")) return "Deciding the next action";
   if (value.includes("approv")) return "Waiting for your approval";
   if (value.includes("complete")) return "Your task is ready";
   if (value.includes("fail")) return "Something needs attention";

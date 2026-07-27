@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Lock file for single instance
-LOCK_FILE="/tmp/hackathon-assistant.lock"
+LOCK_FILE="/tmp/orchestratr.lock"
 
 # Cleanup function
 cleanup() {
@@ -41,7 +41,7 @@ check_existing_instance() {
     if [ -f "$LOCK_FILE" ]; then
         local old_pid=$(cat "$LOCK_FILE")
         if kill -0 "$old_pid" 2>/dev/null; then
-            echo -e "${YELLOW}⚠️  Hackathon Assistant is already running (PID: $old_pid)${NC}"
+            echo -e "${YELLOW}⚠️  Orchestratr is already running (PID: $old_pid)${NC}"
             echo -e "${YELLOW}Stopping existing instance...${NC}"
             kill "$old_pid" 2>/dev/null || true
             sleep 2
@@ -126,7 +126,7 @@ if [ ! -d "frontend/node_modules" ]; then
     exit 1
 fi
 
-echo -e "${BLUE}🚀 Starting Hackathon Assistant${NC}"
+echo -e "${BLUE}🚀 Starting Orchestratr${NC}"
 echo ""
 
 # Check for existing instances and clean up ports

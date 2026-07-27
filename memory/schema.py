@@ -1,6 +1,6 @@
 """SQLite schema + tiny migration helper for the memory subsystem.
 
-Plain ``sqlite3`` is used (no ORM) for hackathon speed/simplicity per
+Plain ``sqlite3`` is used (no ORM) for speed/simplicity per
 ARCHITECTURE.md section 8. All DDL lives here so `store.py` just calls
 `init_db(conn)` once at startup.
 
@@ -111,7 +111,7 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     """Idempotent schema creation + trivial version bookkeeping.
 
-    Hackathon-scale "migration": since we only ever add tables/columns,
+    Lightweight "migration": since we only ever add tables/columns,
     just re-run the DDL (CREATE TABLE IF NOT EXISTS) and stamp the version
     row if missing. A real migration runner would diff SCHEMA_VERSION vs
     the stored version and apply incremental ALTERs.

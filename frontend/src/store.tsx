@@ -341,6 +341,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           refresh();
           break;
         }
+        case "planning_next_step": {
+          patchTask(taskId, { state: "PLANNING" });
+          pushReasoning(taskId, "Planning", "Deciding the next action.");
+          break;
+        }
         case "step_started": {
           const desc = str(p.description, str(p.step_id));
           patchTask(taskId, { state: "EXECUTING" });

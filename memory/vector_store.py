@@ -8,7 +8,7 @@ re-planned from scratch when similarity is high (the "workflow cache").
 Uses `chromadb`'s persistent local client if available. The import is
 lazy/optional: if chromadb isn't installed, `EpisodicMemory` degrades to
 a no-op in-memory list-based fallback so the rest of the app still runs
-in a hackathon demo without the dependency.
+without the dependency.
 
 TODO(chromadb): `pip install chromadb` for real persistent vector search.
 TODO(embeddings): default `embed_fn` stub calls a local NIM-style
@@ -43,8 +43,8 @@ def _default_embed_fn(text: str) -> list[float]:
     Mirrors the pattern used for the local reasoning LLM (NIM / any
     OpenAI-compatible server). Swallows errors and falls back to a cheap
     deterministic hash-based pseudo-embedding so the rest of the pipeline
-    keeps working even with no embedding server running (hackathon demo
-    resilience over correctness).
+    keeps working even with no embedding server running (resilience over
+    correctness).
     """
     base_url = os.environ.get("EMBEDDING_BASE_URL", "http://localhost:8000/v1")
     model = os.environ.get("EMBEDDING_MODEL", "nvidia/nv-embedqa-e5-v5")

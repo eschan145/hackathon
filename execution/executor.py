@@ -12,7 +12,7 @@ the entire contract the Orchestrator relies on. This class:
   3. Hands both to ActionInterpreter.execute() to perform the OS-level
      action.
   4. Captures a post-action screenshot via vision.capture.capture_screen
-     (soft-imported; vision/ may not exist yet in parallel hackathon dev).
+     (soft-imported; vision/ may not exist yet in parallel dev).
   5. Returns an ActionResult with screenshot_ref/a11y_snapshot/raw_output/
      success/details for the Verification subsystem to consume.
 """

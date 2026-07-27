@@ -7,7 +7,7 @@ Design notes
   whatever `command` is) that speaks MCP over stdio. We never hand-roll the
   wire protocol; we lean on the official `mcp` Python SDK
   (`mcp.client.stdio` + `mcp.ClientSession`) when it is installed.
-- The `mcp` package is an OPTIONAL dependency for this hackathon build. If
+- The `mcp` package is an OPTIONAL dependency for this build. If
   it's not installed in the current environment, `MCPClientManager` still
   imports and can be constructed (config loading, registration, and the
   planner-facing `list_all_tools_for_planner` all degrade gracefully to

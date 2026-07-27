@@ -5,7 +5,7 @@ doesn't do a "is a local LLM endpoint reachable" reachability dance before
 choosing a planner/verifier implementation: the vision->OpenClaw-model->
 interpreter pipeline is the only pipeline now, and `openclaw infer model
 run` (via an authenticated `openclaw` CLI) is assumed to be present on this
-hackathon demo box. If it isn't, we still construct a real
+box. If it isn't, we still construct a real
 VisionAgentPlanner rather than silently swapping in a no-op stub -- letting
 the real OpenClawModelClient surface the failure per-turn is far more
 useful for debugging than a stub that always reports success.

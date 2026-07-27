@@ -7,7 +7,7 @@ references, and workflow-cache lookups backed by `EpisodicMemory`.
 
 `save_task` / `get_similar_workflow` are declared `async def` to satisfy
 the `Memory` Protocol (the Orchestrator awaits them), but the underlying
-work is plain synchronous sqlite3 — fine at hackathon scale/latency.
+work is plain synchronous sqlite3 — fine at Orchestratr's scale/latency.
 """
 
 from __future__ import annotations

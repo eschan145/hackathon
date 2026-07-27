@@ -195,6 +195,14 @@ class Orchestrator:
                     self._emit(EventType.TASK_FAILED, task, reason="max_actions_exhausted")
                     return task
 
+                # This is a real, separately-billed model call (plus a fresh
+                # screen capture/OCR pass) with no bracketing event before
+                # it existed previously - the UI had nothing to show between
+                # the prior step's STEP_VERIFIED and this one's STEP_STARTED,
+                # so the whole multi-second planning round-trip visually sat
+                # under the last step's "Checking the result" bubble instead
+                # of its own.
+                self._emit(EventType.PLANNING_NEXT_STEP, task)
                 new_steps = await self.planner.next_actions(task)
                 if not new_steps:
                     # An empty list alone can't distinguish "objective
@@ -402,8 +410,8 @@ class Orchestrator:
 
         Extension point: swap this for a call to a local summarizer LLM
         (per ARCHITECTURE.md section 3, step 8 — "asks the summarizer LLM
-        to produce a natural-language completion summary"). For the
-        hackathon demo, a deterministic string synthesis is sufficient and
+        to produce a natural-language completion summary"). For now,
+        a deterministic string synthesis is sufficient and
         avoids an extra inference round trip on the completion path.
 
         e.g. replace the body below with:

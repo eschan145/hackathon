@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Installing Hackathon Assistant on Linux"
+echo "🚀 Installing Orchestratr on Linux"
 echo ""
 
 # Check if running on Linux
