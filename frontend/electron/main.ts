@@ -120,8 +120,11 @@ function showOverlay(focus = false): void {
   }
 }
 
-function showMainWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+function showMainWindow(route = ""): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createMainWindow();
+  }
+  if (route) loadRenderer(mainWindow, route);
   mainWindow.show();
   mainWindow.focus();
 }
@@ -136,7 +139,7 @@ function createTray(): void {
   tray.setToolTip("Orchestratr");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open Orchestratr", click: showMainWindow },
+      { label: "Open Orchestratr", click: () => showMainWindow() },
       { label: "Open Quick Overlay", click: () => showOverlay(true) },
       { type: "separator" },
       {
@@ -148,7 +151,7 @@ function createTray(): void {
       },
     ]),
   );
-  tray.on("click", showMainWindow);
+  tray.on("click", () => showMainWindow());
 }
 
 function monitorScreenEdge(): void {
@@ -211,7 +214,7 @@ app.whenReady().then(() => {
   screen.on("display-removed", () => overlayWindow?.setBounds(overlayBounds()));
   screen.on("display-metrics-changed", () => overlayWindow?.setBounds(overlayBounds()));
 
-  app.on("activate", showMainWindow);
+  app.on("activate", () => showMainWindow());
 });
 
 ipcMain.on("overlay:set-pinned", (_event, pinned: boolean) => {
@@ -229,9 +232,9 @@ ipcMain.on("overlay:hide", () => {
   if (!overlayPinned) overlayWindow?.hide();
 });
 
-ipcMain.on("app:open-main", () => {
+ipcMain.on("app:open-main", (_event, route?: string) => {
   overlayWindow?.hide();
-  showMainWindow();
+  showMainWindow(route);
 });
 
 app.on("before-quit", () => {

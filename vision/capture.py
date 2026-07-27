@@ -10,12 +10,14 @@ against pre-action state without re-capturing (section 9, "shared cache").
 from __future__ import annotations
 
 import os
+import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 try:
     import mss  # type: ignore
@@ -24,17 +26,7 @@ except ImportError:  # pragma: no cover - optional heavy dep
     # capture_screen falls back to a blank placeholder image so the rest of
     # the pipeline (OCR/VLM/diff) can still be exercised in dev/CI.
 
-try:
-    import pygetwindow as gw  # type: ignore
-except ImportError:  # pragma: no cover - optional, Windows-friendly
-    gw = None  # TODO: `pip install pygetwindow` for active-window bounds.
-
-try:
-    from pywinauto import Desktop  # type: ignore
-except ImportError:  # pragma: no cover - optional, Windows-only
-    Desktop = None  # TODO: `pip install pywinauto` (Windows only) as a
-    # more robust alternative to pygetwindow for window bounds.
-
+from vision.windows import get_window_geometry
 
 Region = tuple[int, int, int, int]  # (left, top, width, height)
 
@@ -62,27 +54,13 @@ def capture_screen(region: Optional[Region] = None) -> Image.Image:
 
 
 def _active_window_region() -> Optional[Region]:
-    """Best-effort active-window bounding box, or None if unavailable."""
-    if gw is not None:
-        try:
-            win = gw.getActiveWindow()
-            if win is not None:
-                return (win.left, win.top, win.width, win.height)
-        except Exception:
-            pass  # fall through to pywinauto / None
+    """Best-effort active-window bounding box, or None if unavailable.
 
-    if Desktop is not None:
-        try:
-            # TODO: pywinauto's "active window" concept differs by backend
-            # (win32 vs uia); this is a best-effort stub, not a robust
-            # cross-app implementation.
-            top_window = Desktop(backend="uia").top_window()
-            rect = top_window.rectangle()
-            return (rect.left, rect.top, rect.width(), rect.height())
-        except Exception:
-            pass
-
-    return None
+    Delegates to vision.windows.get_window_geometry() (wmctrl/xdotool
+    under the hood), which already degrades to None if those tools aren't
+    on PATH or the call fails for any reason.
+    """
+    return get_window_geometry()
 
 
 def capture_active_window() -> Image.Image:
@@ -92,6 +70,42 @@ def capture_active_window() -> Image.Image:
     """
     region = _active_window_region()
     return capture_screen(region)
+
+
+_IMPORT_TIMEOUT = 10
+
+
+def capture_window(window_id: str) -> Optional[Image.Image]:
+    """Capture one window's contents via `import -window <id>`, reading its
+    composited off-screen pixmap so occluded windows capture correctly
+    without being raised/focused. Accepts WindowInfo.id as-is (decimal or
+    0x-hex both work). Returns None on failure; note a bad window id makes
+    `import` exit 0 and silently fall back to the focused window, reporting
+    the real error only on stderr — so any stderr output counts as failure.
+    """
+    fd, tmp_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        try:
+            result = subprocess.run(
+                ["import", "-window", window_id, tmp_path],
+                capture_output=True,
+                timeout=_IMPORT_TIMEOUT,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0 or result.stderr.strip():
+            return None
+        try:
+            with Image.open(tmp_path) as img:
+                return img.copy()
+        except (UnidentifiedImageError, OSError):
+            return None
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 class FrameStore:

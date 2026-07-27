@@ -10,7 +10,7 @@ declare global {
         delay: number;
         launchAtLogin: boolean;
       }) => void;
-      openFullApp: () => void;
+      openFullApp: (route?: string) => void;
       hideOverlay: () => void;
     };
   }

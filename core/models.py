@@ -56,6 +56,11 @@ class Step(BaseModel):
     status: StepStatus = "pending"
     exclusive: bool = False  # if True, never run concurrently with other steps
     retry_count: int = 0
+    # Structured action data for the vision-agent pipeline: a plain dict
+    # form of planning.action_dsl.Action (via dataclasses.asdict), read back
+    # by execution/interpreter.py. Kept as a generic dict (not a typed
+    # planning.* import) so core/ never depends on planning/ or execution/.
+    action: Optional[dict[str, Any]] = None
 
 
 class TaskGraph(BaseModel):

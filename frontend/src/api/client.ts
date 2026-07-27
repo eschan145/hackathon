@@ -74,9 +74,9 @@ export interface ApproveStepRequest {
 }
 
 export interface SettingsPayload {
-  backend: "Native" | "OpenClaw" | "NemoClaw" | "OpenShell" | string;
-  planning_model: string;
-  verification_model: string;
+  model: string;
+  thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive" | "max" | string;
+  show_reasoning: boolean;
   allowed_directories: string[];
   /**
    * How approval requests are handled: "ask" | "auto". Not part of
@@ -114,6 +114,20 @@ export interface AssistantEvent {
   task_id: string;
   payload: Record<string, unknown>;
   timestamp?: string | number;
+}
+
+// Matches backend/main.py's GET /api/model-status (backend/schemas.py's
+// ModelStatusResponse). "mode" is derived from OpenClaw's own model
+// catalog (openclaw models list --json), not guessed from the model
+// string, so it stays correct once a locally-imported model is configured.
+export interface ModelStatus {
+  model: string;
+  provider: string;
+  display_name: string;
+  local: boolean | null;
+  available: boolean | null;
+  mode: "cloud" | "local" | "unknown" | string;
+  error?: string | null;
 }
 
 class ApiError extends Error {
@@ -216,6 +230,9 @@ export const api = {
   },
   saveSettings(body: SettingsPayload): Promise<SettingsPayload> {
     return request("/api/settings", { method: "POST", body: JSON.stringify(body) });
+  },
+  getModelStatus(): Promise<ModelStatus> {
+    return request("/api/model-status");
   },
 };
 

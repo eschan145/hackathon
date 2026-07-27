@@ -8,6 +8,6 @@ contextBridge.exposeInMainWorld("orchestratrDesktop", {
     delay: number;
     launchAtLogin: boolean;
   }) => ipcRenderer.send("overlay:configure", settings),
-  openFullApp: () => ipcRenderer.send("app:open-main"),
+  openFullApp: (route?: string) => ipcRenderer.send("app:open-main", route),
   hideOverlay: () => ipcRenderer.send("overlay:hide"),
 });

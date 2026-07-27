@@ -16,8 +16,12 @@ export default function Overlay() {
   const recent = tasks.filter((task) => !needsApproval.includes(task) && !running.includes(task)).slice(0, 5);
 
   function openTask(taskId: string) {
-    window.orchestratrDesktop?.openFullApp();
-    navigate(`/task/${taskId}`);
+    const route = `/task/${taskId}`;
+    if (window.orchestratrDesktop) {
+      window.orchestratrDesktop.openFullApp(route);
+    } else {
+      navigate(route);
+    }
   }
 
   return (

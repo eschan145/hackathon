@@ -5,3 +5,4 @@ venv/
 data/
 *.sqlite3
 .env
+models/

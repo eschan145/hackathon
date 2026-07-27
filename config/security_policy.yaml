@@ -20,6 +20,7 @@ filesystem:
     - "*/System32/*"
     - "*/.ssh/*"
     - "*/.aws/*"
+    - "*/.gnupg/*"
 
 clipboard:
   audit: true   # every clipboard read/write goes through audit_log.log_action

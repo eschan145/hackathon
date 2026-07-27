@@ -1,25 +1,13 @@
-# Local inference model registry (NVIDIA NIM / vLLM / Ollama — all expose an
-# OpenAI-compatible /v1/chat/completions HTTP endpoint on localhost).
+# Model used via `openclaw infer model run` (planning/openclaw_client.py).
+# This is the ONLY model config in the project — OpenClaw is used purely
+# as a stateless completion runner, for both action-decision text turns
+# and (rarely) multimodal grounding fallback (same model, text+image).
 #
-# planning/llm_client.py reads this file (falling back to env vars, then
-# hardcoded defaults) to decide which local endpoint/model to talk to.
-# Kept intentionally simple for the hackathon — no schema validation, no
-# multi-profile switching logic.
-
-planning:
-  base_url: "http://localhost:8000/v1"   # NIM/vLLM/Ollama OpenAI-compatible base
-  model: "meta/llama-3.1-70b-instruct"   # swap for whatever NIM serves locally
-  api_key: "not-needed"                  # local endpoints usually ignore this
-  temperature: 0.2
-  max_tokens: 4096
-  timeout_seconds: 120
-
-# Local vision-language model, used by vision/vlm_client.py for both
-# verification (success-detection judge) and execution-time UI grounding.
-# Kept smaller/faster than the planning model per ARCHITECTURE.md section
-# 13 (quick yes/no VLM calls vs. a larger planning-only model).
-vision:
-  base_url: "http://localhost:8001/v1"   # separate NIM endpoint from planning
-  model: "nvidia/neva-22b"               # swap for whatever VLM NIM serves locally
-  api_key: "not-needed"
-  timeout_seconds: 60
+# Local model: Qwen3-VL 30B-A3B served by Ollama (run.sh's setup_local_models()
+# starts `ollama serve` and registers it with OpenClaw's native ollama provider).
+# To use a different model: `ollama pull <model>`, then change `model` to
+# whatever id `openclaw models list` shows for it.
+model: "ollama/qwen3-vl:30b-a3b"
+thinking: "low"              # off|minimal|low|medium|high|xhigh|adaptive|max
+timeout_seconds: 120
+reasoning_visible: true      # ask the model to emit brief `# ...` reasoning lines
