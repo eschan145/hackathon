@@ -22,7 +22,14 @@ from typing import Deque, Optional
 from core.event_bus import EventBus
 from core.events import Event, EventType
 from core.interfaces import Executor, Memory, Planner, Verifier
-from core.models import ActionResult, Step, Task, TaskGraph
+from core.models import (
+    ActionResult,
+    ObjectiveContract,
+    ProcedureCandidate,
+    Step,
+    Task,
+    TaskGraph,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,18 +131,64 @@ class Orchestrator:
 
     # -- main entry point --------------------------------------------------
 
-    async def run_task(self, objective: str, source: str = "gui") -> Task:
-        """Run one objective end-to-end and return the final Task record."""
-        task = Task(objective=objective, source=source, state="RECEIVED")
+    async def run_task(
+        self,
+        objective: str,
+        source: str = "gui",
+        objective_contract: Optional[ObjectiveContract] = None,
+    ) -> Task:
+        """Run one objective end-to-end and return the final Task record.
+
+        Wraps the actual run in a CancelledError handler so that a caller
+        cancelling the backing asyncio.Task (backend/main.py's
+        POST /api/tasks/{id}/cancel does exactly this) leaves behind a
+        correctly-terminal CANCELLED record instead of the task staying
+        stuck forever at whatever transient state (VERIFYING, REPLANNING,
+        ...) it happened to be in when the cancellation landed - previously
+        nothing ever persisted a state change on cancellation, so a
+        cancelled task looked identical to a hung one to anyone querying it
+        afterward.
+        """
+        task = Task(
+            objective=objective,
+            source=source,
+            state="RECEIVED",
+            objective_contract=objective_contract,
+        )
+        if objective_contract is not None:
+            task.record(
+                "objective_contract_created",
+                contract_id=objective_contract.id,
+                source_id=objective_contract.source_id,
+                permissions=objective_contract.permissions,
+                prohibited_actions=objective_contract.prohibited_actions,
+                verification_requirements=objective_contract.verification_requirements,
+            )
         self._emit(EventType.OBJECTIVE_RECEIVED, task, objective=objective, source=source)
         await self.memory.save_task(task)
 
+        try:
+            return await self._run_task_body(task, objective)
+        except asyncio.CancelledError:
+            await self._transition(task, "CANCELLED", reason="cancelled_by_caller")
+            self._emit(EventType.TASK_CANCELLED, task)
+            await self.memory.save_task(task)
+            raise
+
+    async def _run_task_body(self, task: Task, objective: str) -> Task:
         await self._transition(task, "PLANNING")
 
         try:
             # Prefer a cached workflow over invoking the planner from scratch
             # (ARCHITECTURE.md section 8 — workflow cache).
-            cached = await self.memory.get_similar_workflow(objective)
+            # An email contract is a new, parameterized run. Never silently
+            # replay a merely-similar workflow before the user has promoted
+            # one into an explicit procedure.
+            cached = (
+                None
+                if task.objective_contract is not None
+                else await self.memory.get_similar_workflow(objective)
+            )
             if cached is not None:
                 graph = cached.model_copy(update={"task_id": task.id})
                 # Reset any leftover step statuses from the cached graph so it
@@ -195,6 +248,14 @@ class Orchestrator:
                     self._emit(EventType.TASK_FAILED, task, reason="max_actions_exhausted")
                     return task
 
+                # This is a real, separately-billed model call (plus a fresh
+                # screen capture/OCR pass) with no bracketing event before
+                # it existed previously - the UI had nothing to show between
+                # the prior step's STEP_VERIFIED and this one's STEP_STARTED,
+                # so the whole multi-second planning round-trip visually sat
+                # under the last step's "Checking the result" bubble instead
+                # of its own.
+                self._emit(EventType.PLANNING_NEXT_STEP, task)
                 new_steps = await self.planner.next_actions(task)
                 if not new_steps:
                     # An empty list alone can't distinguish "objective
@@ -280,10 +341,62 @@ class Orchestrator:
             self._emit(EventType.TASK_FAILED, task, reason="dependency_deadlock")
             return task
 
+        if (
+            task.objective_contract is not None
+            and task.objective_contract.source_kind == "email"
+        ):
+            try:
+                from verification.claim_evidence import verify_contract_report
+
+                evidence_ok, evidence_details = verify_contract_report(
+                    task.objective_contract
+                )
+            except Exception as exc:  # noqa: BLE001
+                evidence_ok = False
+                evidence_details = {"reason": f"evidence verification error: {exc}"}
+            task.record(
+                "claim_evidence_verification",
+                success=evidence_ok,
+                details=evidence_details,
+            )
+            if not evidence_ok:
+                reason = str(
+                    evidence_details.get("reason")
+                    or "one or more report claims were not source-verified"
+                )
+                await self._transition(task, "FAILED", reason=reason)
+                self._emit(
+                    EventType.TASK_FAILED,
+                    task,
+                    reason=reason,
+                    evidence=evidence_details,
+                )
+                return task
+
         summary = self._synthesize_summary(task, graph)
         task.record("summary", text=summary)
+        if task.objective_contract is not None:
+            task.procedure_candidate = ProcedureCandidate(
+                name=_procedure_name(task),
+                description=(
+                    "Reuse the authorized-input, report, evidence, and draft-only "
+                    "approval path from this successful run."
+                ),
+                source_task_id=task.id,
+            )
+            task.record(
+                "procedure_offered",
+                procedure_id=task.procedure_candidate.id,
+                name=task.procedure_candidate.name,
+            )
         await self._transition(task, "COMPLETED", summary=summary)
         self._emit(EventType.TASK_COMPLETED, task, summary=summary)
+        if task.procedure_candidate is not None:
+            self._emit(
+                EventType.PROCEDURE_OFFERED,
+                task,
+                procedure=task.procedure_candidate.model_dump(),
+            )
         await self.memory.save_task(task)
         return task
 
@@ -357,8 +470,12 @@ class Orchestrator:
                 if step.retry_count >= self.max_retries or self._breaker.is_tripped(step):
                     step.status = "failed"
                     return "replan"
-                # else: loop and retry (exponential backoff)
-                await asyncio.sleep(min(2 ** step.retry_count, 30))
+                # else: loop and retry. Short flat backoff, not exponential -
+                # these are blind mechanical re-attempts of the same action
+                # (DeterministicVerifier makes no model call either way), so
+                # the only thing worth waiting for is a moment of transient
+                # UI lag, not a real backend rate limit.
+                await asyncio.sleep(0.75)
 
     async def resolve_approval(self, task_id: str, step_id: str, approved: bool) -> bool:
         """Resume a step blocked at AWAITING_APPROVAL with the user's decision.
@@ -398,8 +515,8 @@ class Orchestrator:
 
         Extension point: swap this for a call to a local summarizer LLM
         (per ARCHITECTURE.md section 3, step 8 — "asks the summarizer LLM
-        to produce a natural-language completion summary"). For the
-        hackathon demo, a deterministic string synthesis is sufficient and
+        to produce a natural-language completion summary"). For now,
+        a deterministic string synthesis is sufficient and
         avoids an extra inference round trip on the completion path.
 
         e.g. replace the body below with:
@@ -412,3 +529,9 @@ class Orchestrator:
             f"Completed '{task.objective}': {len(verified)}/{len(graph.steps)} "
             f"steps succeeded."
         )
+
+
+def _procedure_name(task: Task) -> str:
+    subject = task.objective_contract.objective if task.objective_contract else task.objective
+    clean = subject.strip().splitlines()[0]
+    return f"{clean[:64]} procedure"

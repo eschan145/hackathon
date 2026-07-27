@@ -3,7 +3,7 @@
 # patterns) and execution/control_backend.py (network egress allow-list is
 # consumed by integrations/, referenced here for completeness).
 #
-# Kept intentionally simple for the hackathon: plain yaml, no schema
+# Kept intentionally simple: plain yaml, no schema
 # validation, string paths expanded with os.path.expanduser/expandvars at
 # load time.
 

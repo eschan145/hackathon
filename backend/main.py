@@ -39,6 +39,12 @@ except Exception:  # pragma: no cover
 
 from core.events import Event, EventType
 from core.models import Task
+from integrations.email_router import (
+    EmailCandidate,
+    EmailRouter,
+    EmailRoutingPolicy,
+    objective_from_contract,
+)
 from planning.openclaw_client import LOCAL_MODEL_ID, get_model_status
 from vision.capture import default_frame_store
 
@@ -47,11 +53,22 @@ from backend.schemas import (
     ApprovalRequest,
     ApprovalResponse,
     CancelResponse,
+    ClearHistoryResponse,
+    ConversationMessage,
+    ConversationMessageCreate,
+    ConversationResponse,
+    EmailRoutingIngestRequest,
+    EmailRoutingIngestResponse,
+    EmailRoutingPreviewRequest,
+    EmailRoutingPreviewResponse,
     EventMessage,
     ModelStatusResponse,
     ObjectiveRequest,
     ObjectiveResponse,
+    ProcedureDecisionRequest,
+    ProcedureDecisionResponse,
     SettingsModel,
+    TaskMutationResponse,
     TaskListResponse,
 )
 
@@ -71,6 +88,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         str(Path.home() / "Documents"),
         str(Path.home() / "Downloads"),
     ],
+    "email_routing_enabled": False,
+    "email_routing_prompt": "",
+    "email_authorized_senders": [],
+    "email_require_document": True,
 }
 
 # Base URL the frontend can reach this backend at, used to rewrite bare
@@ -137,7 +158,7 @@ def _event_to_message(event: Event) -> dict[str, Any]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Autonomous Desktop Assistant Backend")
+    app = FastAPI(title="Orchestratr Backend")
 
     app.add_middleware(
         CORSMiddleware,
@@ -166,6 +187,7 @@ def create_app() -> FastAPI:
         app.state.running_tasks: dict[str, asyncio.Task] = {}
         app.state.results: dict[str, Task] = {}
         app.state.connections = ConnectionManager()
+        app.state.email_router = EmailRouter(orchestrator.planner._client)
 
         # Bind the bus to *this* running loop so publish()/publish_threadsafe
         # both work correctly on FastAPI's own event loop.
@@ -179,31 +201,31 @@ def create_app() -> FastAPI:
 
         logger.info("Backend started; orchestrator wired with %s", type(orchestrator.planner).__name__)
 
-    # -- objectives -----------------------------------------------------
-
-    @app.post("/api/objectives", response_model=ObjectiveResponse)
-    async def submit_objective(req: ObjectiveRequest) -> ObjectiveResponse:
+    async def _schedule_objective(
+        objective: str,
+        source: str,
+        objective_contract: Any = None,
+    ) -> str:
         orchestrator = app.state.orchestrator
-
-        # run_task() generates its own Task.id internally and doesn't
-        # return it until the whole task finishes, so to hand back a
-        # task_id immediately (without blocking on the run) we grab it off
-        # the OBJECTIVE_RECEIVED event, which is emitted as the very first
-        # thing run_task does and carries the objective/source we passed.
         loop = asyncio.get_event_loop()
         id_future: "asyncio.Future[str]" = loop.create_future()
 
         async def _capture_id(event: Event) -> None:
             if (
                 not id_future.done()
-                and event.payload.get("objective") == req.objective
-                and event.payload.get("source") == req.source
+                and event.payload.get("objective") == objective
+                and event.payload.get("source") == source
             ):
                 id_future.set_result(event.task_id)
 
         orchestrator.event_bus.subscribe(EventType.OBJECTIVE_RECEIVED, _capture_id)
-
-        aio_task = asyncio.ensure_future(orchestrator.run_task(req.objective, source=req.source))
+        aio_task = asyncio.ensure_future(
+            orchestrator.run_task(
+                objective,
+                source=source,
+                objective_contract=objective_contract,
+            )
+        )
 
         def _on_done(t: "asyncio.Task[Task]") -> None:
             try:
@@ -212,19 +234,83 @@ def create_app() -> FastAPI:
             except asyncio.CancelledError:
                 logger.info("Task cancelled")
             except Exception:
-                logger.exception("run_task failed for objective: %s", req.objective)
+                logger.exception("run_task failed for objective: %s", objective)
 
         aio_task.add_done_callback(_on_done)
-
         try:
             task_id = await asyncio.wait_for(id_future, timeout=5.0)
         except asyncio.TimeoutError:
             task_id = f"unknown-{uuid.uuid4().hex[:12]}"
         finally:
             orchestrator.event_bus.unsubscribe(EventType.OBJECTIVE_RECEIVED, _capture_id)
-
         app.state.running_tasks[task_id] = aio_task
-        return ObjectiveResponse(task_id=task_id)
+        return task_id
+
+    # -- objectives -----------------------------------------------------
+
+    @app.post("/api/objectives", response_model=ObjectiveResponse)
+    async def submit_objective(req: ObjectiveRequest) -> ObjectiveResponse:
+        return ObjectiveResponse(
+            task_id=await _schedule_objective(req.objective, req.source)
+        )
+
+    def _email_policy(settings: SettingsModel) -> EmailRoutingPolicy:
+        return EmailRoutingPolicy(
+            enabled=settings.email_routing_enabled,
+            prompt=settings.email_routing_prompt,
+            authorized_senders=settings.email_authorized_senders,
+            require_document=settings.email_require_document,
+        )
+
+    @app.post("/api/email-routing/preview", response_model=EmailRoutingPreviewResponse)
+    async def preview_email_route(
+        req: EmailRoutingPreviewRequest,
+    ) -> EmailRoutingPreviewResponse:
+        settings = await get_settings()
+        decision = await app.state.email_router.evaluate(
+            req.email, _email_policy(settings)
+        )
+        contract = (
+            app.state.email_router.create_contract(req.email, decision)
+            if decision.matched
+            else None
+        )
+        return EmailRoutingPreviewResponse(decision=decision, contract=contract)
+
+    @app.post("/api/email-routing/ingest", response_model=EmailRoutingIngestResponse)
+    async def ingest_email_route(
+        req: EmailRoutingIngestRequest,
+    ) -> EmailRoutingIngestResponse:
+        settings = await get_settings()
+        policy = _email_policy(settings)
+        decision = await app.state.email_router.evaluate(req.email, policy)
+        if not decision.matched:
+            return EmailRoutingIngestResponse(decision=decision)
+
+        missing = [
+            str(item.get("filename") or item.get("name") or "attachment")
+            for item in req.email.attachments
+            if not (item.get("local_path") or item.get("path"))
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "The email event provider must materialize attachments locally "
+                    f"before ingestion. Missing local paths for: {', '.join(missing)}"
+                ),
+            )
+        contract = app.state.email_router.create_contract(req.email, decision)
+        task_id = await _schedule_objective(
+            objective_from_contract(contract, req.email),
+            source=f"email-event:{req.email.id}",
+            objective_contract=contract,
+        )
+        return EmailRoutingIngestResponse(
+            decision=decision,
+            contract=contract,
+            task_id=task_id,
+        )
 
     @app.get("/api/tasks", response_model=TaskListResponse)
     async def list_tasks() -> TaskListResponse:
@@ -259,11 +345,52 @@ def create_app() -> FastAPI:
 
         raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
 
+    async def _load_task(task_id: str) -> Task | None:
+        memory = app.state.memory
+        try:
+            result = memory.get_task(task_id)
+            if asyncio.iscoroutine(result):
+                result = await result
+            if result is not None:
+                return result
+        except Exception:
+            logger.exception("memory.get_task failed for %s", task_id)
+        return app.state.results.get(task_id)
+
     @app.post("/api/tasks/{task_id}/approve", response_model=ApprovalResponse)
     async def approve_task(task_id: str, req: ApprovalRequest) -> ApprovalResponse:
         orchestrator = app.state.orchestrator
         resolved = await orchestrator.resolve_approval(task_id, req.step_id, req.approved)
         return ApprovalResponse(resolved=resolved)
+
+    @app.post(
+        "/api/tasks/{task_id}/procedure",
+        response_model=ProcedureDecisionResponse,
+    )
+    async def decide_procedure(
+        task_id: str, req: ProcedureDecisionRequest
+    ) -> ProcedureDecisionResponse:
+        task = await _load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
+        if task.procedure_candidate is None:
+            raise HTTPException(status_code=409, detail="No procedure is offered for this task")
+        method_name = "save_procedure" if req.save else "dismiss_procedure"
+        method = getattr(app.state.memory, method_name, None)
+        if method is None:
+            task.procedure_candidate.status = "saved" if req.save else "dismissed"
+            await app.state.memory.save_task(task)
+            candidate = task.procedure_candidate
+        else:
+            candidate = method(task)
+            if asyncio.iscoroutine(candidate):
+                candidate = await candidate
+        app.state.orchestrator._emit(
+            EventType.PROCEDURE_UPDATED,
+            task,
+            procedure=candidate.model_dump(),
+        )
+        return ProcedureDecisionResponse(procedure=candidate)
 
     @app.post("/api/tasks/{task_id}/cancel", response_model=CancelResponse)
     async def cancel_task(task_id: str) -> CancelResponse:
@@ -272,6 +399,92 @@ def create_app() -> FastAPI:
             return CancelResponse(cancelled=False)
         cancelled = aio_task.cancel()
         return CancelResponse(cancelled=cancelled)
+
+    @app.post("/api/tasks/{task_id}/complete", response_model=TaskMutationResponse)
+    async def complete_task(task_id: str) -> TaskMutationResponse:
+        task = await _load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
+
+        aio_task = app.state.running_tasks.pop(task_id, None)
+        if aio_task is not None and not aio_task.done():
+            aio_task.cancel()
+
+        if task.graph is not None:
+            for step in task.graph.steps:
+                if step.status not in ("verified", "failed", "skipped"):
+                    step.status = "skipped"
+        task.state = "COMPLETED"
+        task.record("manually_completed")
+        await app.state.memory.save_task(task)
+        app.state.results[task_id] = task
+        return TaskMutationResponse(completed=True)
+
+    @app.delete("/api/tasks/{task_id}", response_model=TaskMutationResponse)
+    async def delete_task(task_id: str) -> TaskMutationResponse:
+        task = await _load_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"Unknown task_id: {task_id}")
+
+        aio_task = app.state.running_tasks.pop(task_id, None)
+        if aio_task is not None and not aio_task.done():
+            aio_task.cancel()
+
+        delete_task_fn = getattr(app.state.memory, "delete_task", None)
+        if delete_task_fn is not None:
+            result = delete_task_fn(task_id)
+            if asyncio.iscoroutine(result):
+                await result
+        app.state.results.pop(task_id, None)
+        return TaskMutationResponse(deleted=True)
+
+    @app.delete("/api/tasks", response_model=ClearHistoryResponse)
+    async def clear_all_tasks() -> ClearHistoryResponse:
+        """Delete every task, chat, and cached workflow - the Settings page's
+        "Delete all chats" action. Cancels any still-running tasks first, the
+        same way delete_task() does for a single task, so nothing tries to
+        save_task() a row back into existence right after this wipes it.
+        """
+        for aio_task in list(app.state.running_tasks.values()):
+            if not aio_task.done():
+                aio_task.cancel()
+        app.state.running_tasks.clear()
+        app.state.results.clear()
+
+        deleted_count = await app.state.memory.delete_all_tasks()
+        return ClearHistoryResponse(deleted_count=deleted_count)
+
+    # -- persistent task conversations -----------------------------------
+
+    @app.get("/api/tasks/{task_id}/conversation", response_model=ConversationResponse)
+    async def get_conversation(task_id: str) -> ConversationResponse:
+        list_messages = getattr(app.state.memory, "list_conversation_messages", None)
+        if list_messages is None:
+            return ConversationResponse(messages=[])
+        result = list_messages(task_id)
+        if asyncio.iscoroutine(result):
+            result = await result
+        return ConversationResponse(
+            messages=[ConversationMessage(**message) for message in (result or [])]
+        )
+
+    @app.post("/api/tasks/{task_id}/conversation", response_model=ConversationMessage)
+    async def append_conversation(
+        task_id: str, message: ConversationMessageCreate
+    ) -> ConversationMessage:
+        append_message = getattr(app.state.memory, "append_conversation_message", None)
+        if append_message is None:
+            raise HTTPException(status_code=501, detail="Conversation persistence unavailable")
+        result = append_message(
+            task_id,
+            message.id,
+            message.role,
+            message.text,
+            message.created_at,
+        )
+        if asyncio.iscoroutine(result):
+            result = await result
+        return ConversationMessage(**result)
 
     # -- settings ---------------------------------------------------------
 

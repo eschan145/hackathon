@@ -2,7 +2,7 @@
 
 Per ARCHITECTURE.md section 9 (Vision Subsystem): `mss` is used for
 cross-platform screen capture (DXGI duplication would be a Windows-only
-lower-overhead alternative, not implemented here for hackathon scope).
+lower-overhead alternative, not implemented here for this scope).
 Frames are cached in a small ring-buffer directory so Verification can diff
 against pre-action state without re-capturing (section 9, "shared cache").
 """

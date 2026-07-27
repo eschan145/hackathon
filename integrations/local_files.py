@@ -107,7 +107,7 @@ class LocalDocumentReader:
 class LocalObjectiveScanner:
     """Scans allow-listed directories/files for objective-like content.
 
-    Hackathon-scope heuristic: any plain-text/markdown file containing
+    Scope heuristic: any plain-text/markdown file containing
     unchecked GitHub-flavored-markdown todo items (`- [ ] do the thing`) is
     treated as a source of candidate objectives. Real deployments would
     likely extend this to parse a Todoist export file, a "Notes" folder of
@@ -123,7 +123,7 @@ class LocalObjectiveScanner:
         if scan_paths is not None:
             self.scan_paths = [Path(os.path.expanduser(str(p))) for p in scan_paths]
         else:
-            # Reasonable hackathon defaults: allowed roots + any *.md/*.txt
+            # Reasonable defaults: allowed roots + any *.md/*.txt
             # directly inside them. Real usage should pass explicit paths
             # (e.g. a "Notes" folder or a specific todo.md).
             self.scan_paths = list(self.reader.allowed_roots)

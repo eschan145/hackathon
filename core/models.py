@@ -33,8 +33,51 @@ TaskState = Literal[
     "REPLANNING",
     "COMPLETED",
     "FAILED",
+    "CANCELLED",
     "AWAITING_APPROVAL",
 ]
+
+
+class ContractInput(BaseModel):
+    """A source artifact authorized for one objective."""
+
+    name: str
+    kind: str = "document"
+    local_path: Optional[str] = None
+    source_id: Optional[str] = None
+    mime_type: Optional[str] = None
+
+
+class ObjectiveContract(BaseModel):
+    """Bounded, inspectable instructions derived from an untrusted trigger."""
+
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    source_kind: str
+    source_id: str
+    authorized_sender: Optional[str] = None
+    objective: str
+    inputs: list[ContractInput] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    prohibited_actions: list[str] = Field(default_factory=list)
+    deliverables: list[str] = Field(default_factory=list)
+    deliverable_paths: list[str] = Field(default_factory=list)
+    verification_requirements: list[str] = Field(default_factory=list)
+    approval_requirements: list[str] = Field(default_factory=list)
+    routing_reason: str = ""
+
+
+ProcedureStatus = Literal["offered", "saved", "dismissed"]
+
+
+class ProcedureCandidate(BaseModel):
+    """A successful run that can be promoted into a reusable procedure."""
+
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
+    name: str
+    description: str
+    source_task_id: str
+    status: ProcedureStatus = "offered"
+    created_at: float = Field(default_factory=time.time)
 
 
 class Step(BaseModel):
@@ -100,6 +143,8 @@ class Task(BaseModel):
     created_at: float = Field(default_factory=time.time)
     graph: Optional[TaskGraph] = None
     history: list[dict[str, Any]] = Field(default_factory=list)
+    objective_contract: Optional[ObjectiveContract] = None
+    procedure_candidate: Optional[ProcedureCandidate] = None
 
     def record(self, kind: str, **data: Any) -> None:
         """Append a lightweight history entry (for audit log / debugging)."""

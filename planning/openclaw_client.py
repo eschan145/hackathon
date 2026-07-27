@@ -28,7 +28,7 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 
 # This project runs exclusively against the local Qwen3-VL model served by
 # Ollama (see run.sh's setup_local_models()) — no cloud model is ever an
-# acceptable substitute (a core hackathon requirement: all computing must
+# acceptable substitute (a core requirement: all computing must
 # be done locally on the NVIDIA DGX Spark). Enforced in
 # OpenClawModelClient.__init__ below rather than left as just a default,
 # so a stray config edit can't silently start routing completions to a
@@ -48,7 +48,7 @@ def _load_config(config_path: Path) -> dict[str, Any]:
 
     Deliberately simple: one file, no sections, no merging logic beyond
     "yaml value if present, else default". Any read/parse error is
-    swallowed (best-effort, per the hackathon-scope pattern this mirrors)
+    swallowed (best-effort, per the fallback pattern this mirrors)
     and defaults are used instead.
     """
     cfg: dict[str, Any] = dict(_DEFAULTS)
@@ -146,6 +146,16 @@ class OpenClawModelClient:
                 f"`openclaw infer model run` timed out after {self.timeout_seconds}s "
                 f"(model={self.model!r})"
             ) from exc
+        except asyncio.CancelledError:
+            # The caller (core/orchestrator.py's run_task, cancelled via
+            # backend/main.py's /cancel endpoint) gave up on this turn -
+            # without this, only the internal timeout above ever killed the
+            # subprocess, so a user-cancelled task left its `openclaw infer
+            # model run` process running to completion in the background,
+            # still burning GPU time on a result nothing will ever read.
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            raise
 
         stdout_text = stdout_bytes.decode("utf-8", errors="replace")
         stderr_text = stderr_bytes.decode("utf-8", errors="replace")

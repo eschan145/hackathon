@@ -26,8 +26,11 @@ except ImportError:  # pragma: no cover - optional dependency
 
 # TODO(keyring): `pip install keyring` for real OS-vault-backed secret
 # storage. Without it, secrets only live in this process's memory and are
-# lost on restart (fine for a hackathon demo, not for production).
+# lost on restart (fine for a demo, not for production).
 
+# NOTE: kept as-is (not renamed to "orchestratr") because it is the actual
+# keyring service namespace used to look up already-stored OS-vault secrets;
+# changing it would orphan any credentials a user has already saved.
 _SERVICE_NAMESPACE = "nvidia_hackathon_assistant"
 
 

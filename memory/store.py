@@ -7,7 +7,7 @@ references, and workflow-cache lookups backed by `EpisodicMemory`.
 
 `save_task` / `get_similar_workflow` are declared `async def` to satisfy
 the `Memory` Protocol (the Orchestrator awaits them), but the underlying
-work is plain synchronous sqlite3 — fine at hackathon scale/latency.
+work is plain synchronous sqlite3 — fine at Orchestratr's scale/latency.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from core.models import Task, TaskGraph
+from core.models import ObjectiveContract, ProcedureCandidate, Task, TaskGraph
 
 from .schema import connect
 from .vector_store import EpisodicMemory
@@ -51,14 +51,28 @@ class MemoryStore:
         """
         graph_json = task.graph.model_dump_json() if task.graph else None
         history_json = json.dumps(task.history)
+        contract_json = (
+            task.objective_contract.model_dump_json() if task.objective_contract else None
+        )
+        candidate_json = (
+            task.procedure_candidate.model_dump_json() if task.procedure_candidate else None
+        )
         success = 1 if task.state == "COMPLETED" else (0 if task.state == "FAILED" else None)
         completed_at = time.time() if task.state in ("COMPLETED", "FAILED") else None
 
         with self._conn:
             self._conn.execute(
                 """
-                INSERT INTO tasks (id, objective, source, state, created_at, completed_at, graph_json, history_json, success)
-                VALUES (:id, :objective, :source, :state, :created_at, :completed_at, :graph_json, :history_json, :success)
+                INSERT INTO tasks (
+                    id, objective, source, state, created_at, completed_at,
+                    graph_json, history_json, contract_json,
+                    procedure_candidate_json, success
+                )
+                VALUES (
+                    :id, :objective, :source, :state, :created_at, :completed_at,
+                    :graph_json, :history_json, :contract_json,
+                    :procedure_candidate_json, :success
+                )
                 ON CONFLICT(id) DO UPDATE SET
                     objective=excluded.objective,
                     source=excluded.source,
@@ -66,6 +80,8 @@ class MemoryStore:
                     completed_at=COALESCE(excluded.completed_at, tasks.completed_at),
                     graph_json=excluded.graph_json,
                     history_json=excluded.history_json,
+                    contract_json=excluded.contract_json,
+                    procedure_candidate_json=excluded.procedure_candidate_json,
                     success=COALESCE(excluded.success, tasks.success)
                 """,
                 {
@@ -77,6 +93,8 @@ class MemoryStore:
                     "completed_at": completed_at,
                     "graph_json": graph_json,
                     "history_json": history_json,
+                    "contract_json": contract_json,
+                    "procedure_candidate_json": candidate_json,
                     "success": success,
                 },
             )
@@ -95,16 +113,89 @@ class MemoryStore:
             return None
         return self._row_to_task(row)
 
+    async def delete_task(self, task_id: str) -> bool:
+        """Permanently remove one persisted task record."""
+        with self._conn:
+            self._conn.execute("DELETE FROM conversation_messages WHERE task_id = ?", (task_id,))
+            cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        self._episodic.delete_workflow(task_id)
+        return cursor.rowcount > 0
+
+    async def delete_all_tasks(self) -> int:
+        """Permanently remove every persisted task, chat, and workflow-cache
+        entry. Returns the number of task rows deleted.
+
+        Callers (backend/main.py) are responsible for cancelling any
+        still-running asyncio task first - deleting rows out from under a
+        running Orchestrator loop wouldn't stop it, and its next
+        save_task() would just re-insert the row via the upsert in
+        save_task() above.
+        """
+        with self._conn:
+            self._conn.execute("DELETE FROM conversation_messages")
+            cursor = self._conn.execute("DELETE FROM tasks")
+        self._episodic.delete_all()
+        return cursor.rowcount
+
     async def list_recent_tasks(self, limit: int = 20) -> list[Task]:
         rows = self._conn.execute(
             "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [self._row_to_task(r) for r in rows]
 
+    async def list_conversation_messages(self, task_id: str) -> list[dict[str, Any]]:
+        """Return the durable, user-visible conversation for a task."""
+        rows = self._conn.execute(
+            """
+            SELECT id, task_id, role, text, created_at
+            FROM conversation_messages
+            WHERE task_id = ?
+            ORDER BY created_at ASC
+            """,
+            (task_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def append_conversation_message(
+        self,
+        task_id: str,
+        message_id: str,
+        role: str,
+        text: str,
+        created_at: float,
+    ) -> dict[str, Any]:
+        """Persist one chat message, idempotently by message id."""
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO conversation_messages (id, task_id, role, text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (message_id, task_id, role, text, created_at),
+            )
+        return {
+            "id": message_id,
+            "task_id": task_id,
+            "role": role,
+            "text": text,
+            "created_at": created_at,
+        }
+
     @staticmethod
     def _row_to_task(row: Any) -> Task:
         graph = TaskGraph.model_validate_json(row["graph_json"]) if row["graph_json"] else None
         history = json.loads(row["history_json"]) if row["history_json"] else []
+        contract = (
+            ObjectiveContract.model_validate_json(row["contract_json"])
+            if "contract_json" in row.keys() and row["contract_json"]
+            else None
+        )
+        candidate = (
+            ProcedureCandidate.model_validate_json(row["procedure_candidate_json"])
+            if "procedure_candidate_json" in row.keys()
+            and row["procedure_candidate_json"]
+            else None
+        )
         return Task(
             id=row["id"],
             objective=row["objective"],
@@ -113,7 +204,57 @@ class MemoryStore:
             created_at=row["created_at"] or time.time(),
             graph=graph,
             history=history,
+            objective_contract=contract,
+            procedure_candidate=candidate,
         )
+
+    async def save_procedure(self, task: Task) -> ProcedureCandidate:
+        """Promote an offered procedure into the durable procedure library."""
+        candidate = task.procedure_candidate
+        if candidate is None or task.graph is None:
+            raise ValueError("Task has no procedure candidate or task graph")
+        candidate.status = "saved"
+        definition = {
+            "objective_contract": (
+                task.objective_contract.model_dump() if task.objective_contract else None
+            ),
+            "task_graph": task.graph.model_dump(),
+        }
+        now = time.time()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO procedures (
+                    id, name, description, source_task_id,
+                    definition_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    description=excluded.description,
+                    definition_json=excluded.definition_json,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    candidate.id,
+                    candidate.name,
+                    candidate.description,
+                    task.id,
+                    json.dumps(definition),
+                    candidate.created_at,
+                    now,
+                ),
+            )
+        await self.save_task(task)
+        return candidate
+
+    async def dismiss_procedure(self, task: Task) -> ProcedureCandidate:
+        candidate = task.procedure_candidate
+        if candidate is None:
+            raise ValueError("Task has no procedure candidate")
+        candidate.status = "dismissed"
+        await self.save_task(task)
+        return candidate
 
     async def get_similar_workflow(self, objective: str) -> Optional[TaskGraph]:
         """Workflow cache: find a similar past *successful* task by

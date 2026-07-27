@@ -8,7 +8,7 @@ re-planned from scratch when similarity is high (the "workflow cache").
 Uses `chromadb`'s persistent local client if available. The import is
 lazy/optional: if chromadb isn't installed, `EpisodicMemory` degrades to
 a no-op in-memory list-based fallback so the rest of the app still runs
-in a hackathon demo without the dependency.
+without the dependency.
 
 TODO(chromadb): `pip install chromadb` for real persistent vector search.
 TODO(embeddings): default `embed_fn` stub calls a local NIM-style
@@ -43,8 +43,8 @@ def _default_embed_fn(text: str) -> list[float]:
     Mirrors the pattern used for the local reasoning LLM (NIM / any
     OpenAI-compatible server). Swallows errors and falls back to a cheap
     deterministic hash-based pseudo-embedding so the rest of the pipeline
-    keeps working even with no embedding server running (hackathon demo
-    resilience over correctness).
+    keeps working even with no embedding server running (resilience over
+    correctness).
     """
     base_url = os.environ.get("EMBEDDING_BASE_URL", "http://localhost:8000/v1")
     model = os.environ.get("EMBEDDING_MODEL", "nvidia/nv-embedqa-e5-v5")
@@ -99,12 +99,13 @@ class EpisodicMemory:
         )
         self._collection_name = collection_name
         self._collection = None
+        self._client = None
         self._fallback: list[dict[str, Any]] = []  # used when chromadb unavailable
 
         if _HAS_CHROMADB:
             self._persist_dir.mkdir(parents=True, exist_ok=True)
-            client = chromadb.PersistentClient(path=str(self._persist_dir))
-            self._collection = client.get_or_create_collection(self._collection_name)
+            self._client = chromadb.PersistentClient(path=str(self._persist_dir))
+            self._collection = self._client.get_or_create_collection(self._collection_name)
 
     def add_workflow(
         self,
@@ -138,6 +139,26 @@ class EpisodicMemory:
             )
         else:
             self._fallback.append({**metadata, "embedding": embedding})
+
+    def delete_workflow(self, task_id: str) -> None:
+        """Remove all cached workflow entries for a task."""
+        if self._collection is not None:
+            self._collection.delete(where={"task_id": task_id})
+        else:
+            self._fallback = [entry for entry in self._fallback if entry["task_id"] != task_id]
+
+    def delete_all(self) -> None:
+        """Wipe every cached workflow entry (used by "clear all history").
+
+        Chroma's `.delete()` needs a non-empty `where`/`ids` filter, so
+        there's no single call that means "delete everything" - dropping
+        and recreating the collection is the standard way to clear it.
+        """
+        if self._client is not None:
+            self._client.delete_collection(self._collection_name)
+            self._collection = self._client.get_or_create_collection(self._collection_name)
+        else:
+            self._fallback = []
 
     def find_similar(
         self,

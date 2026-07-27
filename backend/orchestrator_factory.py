@@ -5,7 +5,7 @@ doesn't do a "is a local LLM endpoint reachable" reachability dance before
 choosing a planner/verifier implementation: the vision->OpenClaw-model->
 interpreter pipeline is the only pipeline now, and `openclaw infer model
 run` (via an authenticated `openclaw` CLI) is assumed to be present on this
-hackathon demo box. If it isn't, we still construct a real
+box. If it isn't, we still construct a real
 VisionAgentPlanner rather than silently swapping in a no-op stub -- letting
 the real OpenClawModelClient surface the failure per-turn is far more
 useful for debugging than a stub that always reports success.
@@ -22,7 +22,7 @@ import shutil
 from typing import Any, Optional
 
 from core.event_bus import EventBus
-from core.models import Task, TaskGraph
+from core.models import ProcedureCandidate, Task, TaskGraph
 from core.orchestrator import Orchestrator
 from execution.executor import ActionExecutor
 from planning.vision_agent_planner import VisionAgentPlanner
@@ -40,12 +40,52 @@ class _StubMemory:
 
     def __init__(self) -> None:
         self._tasks: dict[str, Task] = {}
+        self._conversations: dict[str, list[dict[str, Any]]] = {}
 
     async def save_task(self, task: Task) -> None:
         self._tasks[task.id] = task
 
     async def get_similar_workflow(self, objective: str) -> Optional[TaskGraph]:
         return None
+
+    async def get_task(self, task_id: str) -> Optional[Task]:
+        return self._tasks.get(task_id)
+
+    async def delete_task(self, task_id: str) -> bool:
+        self._conversations.pop(task_id, None)
+        return self._tasks.pop(task_id, None) is not None
+
+    async def list_conversation_messages(self, task_id: str) -> list[dict[str, Any]]:
+        return list(self._conversations.get(task_id, []))
+
+    async def append_conversation_message(
+        self, task_id: str, message_id: str, role: str, text: str, created_at: float
+    ) -> dict[str, Any]:
+        messages = self._conversations.setdefault(task_id, [])
+        message = {
+            "id": message_id,
+            "task_id": task_id,
+            "role": role,
+            "text": text,
+            "created_at": created_at,
+        }
+        if not any(existing["id"] == message_id for existing in messages):
+            messages.append(message)
+        return message
+
+    async def save_procedure(self, task: Task) -> ProcedureCandidate:
+        if task.procedure_candidate is None:
+            raise ValueError("Task has no procedure candidate")
+        task.procedure_candidate.status = "saved"
+        await self.save_task(task)
+        return task.procedure_candidate
+
+    async def dismiss_procedure(self, task: Task) -> ProcedureCandidate:
+        if task.procedure_candidate is None:
+            raise ValueError("Task has no procedure candidate")
+        task.procedure_candidate.status = "dismissed"
+        await self.save_task(task)
+        return task.procedure_candidate
 
     def list_recent_tasks(self, limit: int = 25) -> list[Task]:
         return sorted(self._tasks.values(), key=lambda t: t.created_at, reverse=True)[:limit]

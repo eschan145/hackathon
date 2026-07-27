@@ -2,7 +2,8 @@
   "name": "assistant-frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron + React frontend for the local autonomous desktop assistant",
+  "description": "Orchestratr desktop task orchestration app",
+  "productName": "Orchestratr",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c blue,green \"vite\" \"npm:electron:dev\"",
@@ -29,13 +30,17 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.hackathon.assistant",
+    "appId": "com.orchestratr.desktop",
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
     ],
     "directories": {
       "output": "release"
+    },
+    "mac": {
+      "icon": "public/Orchestratr.icns",
+      "category": "public.app-category.productivity"
     }
   }
 }

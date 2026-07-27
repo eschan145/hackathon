@@ -1,107 +1,70 @@
-import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
-import { useEffect, useState } from "react";
-import Home from "./pages/Home";
-import Task from "./pages/Task";
-import History from "./pages/History";
+import { useEffect } from "react";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import Sidebar from "./components/Sidebar";
+import QuickAddModal from "./components/QuickAddModal";
+import Tasks from "./pages/Tasks";
+import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
-import { TaskProvider } from "./TaskContext";
-import { eventSocket } from "./hooks/useEventSocket";
-import { api, ModelStatus } from "./api/client";
+import Overlay from "./pages/Overlay";
+import Onboarding from "./components/Onboarding";
+import { StoreProvider, useStore } from "./store";
 
-// Re-poll occasionally rather than fetch once: the backend caches this for
-// 30s on its side anyway (see planning/openclaw_client.py), so this is just
-// keeping a long-lived Electron window's badge honest if config/models.yaml
-// changes and the backend restarts, without hammering the openclaw CLI.
-const MODEL_STATUS_POLL_MS = 60_000;
-
-function ModelStatusBadge() {
-  const [status, setStatus] = useState<ModelStatus | null>(null);
+/** Cmd/Ctrl+K toggles Quick Add from anywhere. */
+function Shortcuts() {
+  const { setQuickAddOpen } = useStore();
 
   useEffect(() => {
-    let cancelled = false;
-    function load() {
-      api
-        .getModelStatus()
-        .then((s) => {
-          if (!cancelled) setStatus(s);
-        })
-        .catch(() => {
-          if (!cancelled) setStatus(null);
-        });
-    }
-    load();
-    const id = setInterval(load, MODEL_STATUS_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setQuickAddOpen((open) => !open);
+      }
     };
-  }, []);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setQuickAddOpen]);
 
-  if (!status) {
-    return <div className="model-status unknown">Model: unknown</div>;
-  }
-
-  const modeLabel = status.mode === "local" ? "Local" : status.mode === "cloud" ? "Cloud" : "Unknown";
-
-  return (
-    <div
-      className={`model-status ${status.mode}`}
-      title={status.error ? `${status.display_name} — ${status.error}` : status.display_name}
-    >
-      <span className={`model-dot ${status.mode}`} />
-      {status.display_name} · {modeLabel}
-    </div>
-  );
+  return null;
 }
 
-function NavBar() {
-  const [connected, setConnected] = useState(eventSocket.isConnected);
-
-  useEffect(() => {
-    eventSocket.connect();
-    return eventSocket.onConnectionChange(setConnected);
-  }, []);
+function AppContent() {
+  const location = useLocation();
+  const overlay = location.pathname === "/overlay";
+  if (overlay) return <Routes><Route path="/overlay" element={<Overlay />} /></Routes>;
 
   return (
-    <div className="navbar">
-      <span className="brand">Assistant</span>
-      <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
-        Home
-      </NavLink>
-      <NavLink to="/task" className={({ isActive }) => (isActive ? "active" : "")}>
-        Task
-      </NavLink>
-      <NavLink to="/history" className={({ isActive }) => (isActive ? "active" : "")}>
-        History
-      </NavLink>
-      <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
-        Settings
-      </NavLink>
-      <div className="navbar-right">
-        <ModelStatusBadge />
-        <div className="conn-status">
-          <span className={`conn-dot ${connected ? "connected" : ""}`} />
-          {connected ? "Connected" : "Disconnected"}
-        </div>
+    <>
+      <Shortcuts />
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<Navigate to="/now" replace />} />
+            <Route path="/now" element={<Tasks />} />
+            <Route path="/tasks" element={<Navigate to="/now" replace />} />
+            <Route path="/overview" element={<Navigate to="/now" replace />} />
+            <Route path="/notifications" element={<Navigate to="/now" replace />} />
+            <Route path="/task/:taskId" element={<Chat />} />
+            <Route path="/chat/:taskId" element={<Chat />} />
+            <Route path="/archive" element={<Navigate to="/now" replace />} />
+            <Route path="/completed-chats" element={<Navigate to="/now" replace />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/now" replace />} />
+          </Routes>
+        </main>
       </div>
-    </div>
+      <QuickAddModal />
+      <Onboarding />
+    </>
   );
 }
 
 export default function App() {
   return (
-    <TaskProvider>
+    <StoreProvider>
       <HashRouter>
-        <div className="app-shell">
-          <NavBar />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/task" element={<Task />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </div>
+        <AppContent />
       </HashRouter>
-    </TaskProvider>
+    </StoreProvider>
   );
 }

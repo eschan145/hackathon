@@ -1,5 +1,13 @@
-// Intentionally minimal / unused: the renderer connects directly to the
-// local backend (http://127.0.0.1:8765) via fetch and WebSocket rather
-// than routing through IPC. Kept as a placeholder in case a future
-// feature (e.g. native file dialogs) needs a contextBridge API.
-export {};
+import { contextBridge, ipcRenderer } from "electron";
+
+contextBridge.exposeInMainWorld("orchestratrDesktop", {
+  setOverlayPinned: (pinned: boolean) => ipcRenderer.send("overlay:set-pinned", pinned),
+  configureOverlay: (settings: {
+    enabled: boolean;
+    edge: "left" | "right";
+    delay: number;
+    launchAtLogin: boolean;
+  }) => ipcRenderer.send("overlay:configure", settings),
+  openFullApp: (route?: string) => ipcRenderer.send("app:open-main", route),
+  hideOverlay: () => ipcRenderer.send("overlay:hide"),
+});
