@@ -427,6 +427,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           refresh();
           break;
         }
+        case "procedure_offered":
+        case "procedure_updated": {
+          refresh();
+          break;
+        }
         default:
           break;
       }

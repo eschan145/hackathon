@@ -19,6 +19,7 @@ the entire contract the Orchestrator relies on. This class:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from core.models import ActionResult, Step, Task
@@ -57,6 +58,23 @@ class ActionExecutor:
         if screen_state is None:
             details["screen_state_missing"] = True
 
+        policy_reason = _contract_policy_violation(action, task, screen_state)
+        if policy_reason is not None:
+            log_action(
+                "policy_blocked",
+                {
+                    "task_id": task.id,
+                    "step_id": step.id,
+                    "kind": action.kind,
+                    "reason": policy_reason,
+                },
+            )
+            return ActionResult(
+                success=False,
+                raw_output=policy_reason,
+                details={**details, "policy_blocked": True, "reason": policy_reason},
+            )
+
         result = await self.interpreter.execute(action, screen_state)
 
         screenshot_ref = self._capture_screenshot()
@@ -85,7 +103,6 @@ class ActionExecutor:
             from vision.capture import capture_screen, default_frame_store
         except ImportError:
             return None
-
         try:
             image = capture_screen()
             # Bare ref_id via the shared FrameStore (same convention
@@ -96,6 +113,25 @@ class ActionExecutor:
             return default_frame_store.save(image)
         except Exception:
             return None
+
+
+def _contract_policy_violation(action: Action, task: Task, screen_state: Any) -> Optional[str]:
+    """Fail closed on attempts to send a reply under a draft-only contract."""
+    contract = task.objective_contract
+    if contract is None or "send_email" not in contract.prohibited_actions:
+        return None
+
+    if action.kind == "key":
+        normalized = (action.keys or "").lower().replace(" ", "")
+        if normalized in {"ctrl+enter", "cmd+enter", "command+enter"}:
+            return "Objective contract blocked a send-email keyboard shortcut."
+
+    if action.kind == "click" and screen_state is not None:
+        element = screen_state.element_by_id(action.element_id)
+        label = re.sub(r"[^a-z0-9]+", " ", element.text.lower()).strip() if element else ""
+        if label in {"send", "send now", "submit", "send message"}:
+            return f"Objective contract blocked clicking the external action {label!r}."
+    return None
 
     @staticmethod
     def _capture_a11y_snapshot() -> Optional[dict[str, Any]]:

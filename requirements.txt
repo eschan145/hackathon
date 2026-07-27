@@ -12,6 +12,7 @@ pytesseract>=0.3
 
 pyautogui>=0.9
 pyperclip>=1.8
+pypdf>=4.0
 
 chromadb>=0.5
 keyring>=25.0

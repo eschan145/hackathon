@@ -32,6 +32,8 @@ class EventType(str, Enum):
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
     APPROVAL_REQUIRED = "approval_required"
+    PROCEDURE_OFFERED = "procedure_offered"
+    PROCEDURE_UPDATED = "procedure_updated"
 
 
 @dataclass

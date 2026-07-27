@@ -57,6 +57,15 @@ export interface TaskRecord {
   created_at: number | null;
   steps: TaskStep[];
   history: Array<Record<string, unknown>>;
+  procedure_candidate?: ProcedureCandidate | null;
+}
+
+export interface ProcedureCandidate {
+  id: string;
+  name: string;
+  description: string;
+  source_task_id: string;
+  status: "offered" | "saved" | "dismissed" | string;
 }
 
 export interface CreateObjectiveRequest {
@@ -84,6 +93,10 @@ export interface SettingsPayload {
    * `extra = "allow"`, so it persists to config/settings.yaml unchanged.
    */
   approval_mode?: string;
+  email_routing_enabled: boolean;
+  email_routing_prompt: string;
+  email_authorized_senders: string[];
+  email_require_document: boolean;
 }
 
 export interface ConversationMessagePayload {
@@ -169,6 +182,7 @@ export function normalizeTask(raw: Record<string, any>): TaskRecord {
           : null,
     steps: rawSteps.map(normalizeStep),
     history: raw?.history ?? [],
+    procedure_candidate: raw?.procedure_candidate ?? null,
   };
 }
 
@@ -233,6 +247,15 @@ export const api = {
   },
   getModelStatus(): Promise<ModelStatus> {
     return request("/api/model-status");
+  },
+  decideProcedure(
+    taskId: string,
+    save: boolean,
+  ): Promise<{ procedure: ProcedureCandidate }> {
+    return request(`/api/tasks/${encodeURIComponent(taskId)}/procedure`, {
+      method: "POST",
+      body: JSON.stringify({ save }),
+    });
   },
 };
 
