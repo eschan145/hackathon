@@ -146,6 +146,16 @@ class OpenClawModelClient:
                 f"`openclaw infer model run` timed out after {self.timeout_seconds}s "
                 f"(model={self.model!r})"
             ) from exc
+        except asyncio.CancelledError:
+            # The caller (core/orchestrator.py's run_task, cancelled via
+            # backend/main.py's /cancel endpoint) gave up on this turn -
+            # without this, only the internal timeout above ever killed the
+            # subprocess, so a user-cancelled task left its `openclaw infer
+            # model run` process running to completion in the background,
+            # still burning GPU time on a result nothing will ever read.
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            raise
 
         stdout_text = stdout_bytes.decode("utf-8", errors="replace")
         stderr_text = stderr_bytes.decode("utf-8", errors="replace")

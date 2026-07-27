@@ -47,6 +47,7 @@ from backend.schemas import (
     ApprovalRequest,
     ApprovalResponse,
     CancelResponse,
+    ClearHistoryResponse,
     ConversationMessage,
     ConversationMessageCreate,
     ConversationResponse,
@@ -326,6 +327,22 @@ def create_app() -> FastAPI:
                 await result
         app.state.results.pop(task_id, None)
         return TaskMutationResponse(deleted=True)
+
+    @app.delete("/api/tasks", response_model=ClearHistoryResponse)
+    async def clear_all_tasks() -> ClearHistoryResponse:
+        """Delete every task, chat, and cached workflow - the Settings page's
+        "Delete all chats" action. Cancels any still-running tasks first, the
+        same way delete_task() does for a single task, so nothing tries to
+        save_task() a row back into existence right after this wipes it.
+        """
+        for aio_task in list(app.state.running_tasks.values()):
+            if not aio_task.done():
+                aio_task.cancel()
+        app.state.running_tasks.clear()
+        app.state.results.clear()
+
+        deleted_count = await app.state.memory.delete_all_tasks()
+        return ClearHistoryResponse(deleted_count=deleted_count)
 
     # -- persistent task conversations -----------------------------------
 

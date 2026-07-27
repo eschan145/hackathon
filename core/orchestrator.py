@@ -125,11 +125,31 @@ class Orchestrator:
     # -- main entry point --------------------------------------------------
 
     async def run_task(self, objective: str, source: str = "gui") -> Task:
-        """Run one objective end-to-end and return the final Task record."""
+        """Run one objective end-to-end and return the final Task record.
+
+        Wraps the actual run in a CancelledError handler so that a caller
+        cancelling the backing asyncio.Task (backend/main.py's
+        POST /api/tasks/{id}/cancel does exactly this) leaves behind a
+        correctly-terminal CANCELLED record instead of the task staying
+        stuck forever at whatever transient state (VERIFYING, REPLANNING,
+        ...) it happened to be in when the cancellation landed - previously
+        nothing ever persisted a state change on cancellation, so a
+        cancelled task looked identical to a hung one to anyone querying it
+        afterward.
+        """
         task = Task(objective=objective, source=source, state="RECEIVED")
         self._emit(EventType.OBJECTIVE_RECEIVED, task, objective=objective, source=source)
         await self.memory.save_task(task)
 
+        try:
+            return await self._run_task_body(task, objective)
+        except asyncio.CancelledError:
+            await self._transition(task, "CANCELLED", reason="cancelled_by_caller")
+            self._emit(EventType.TASK_CANCELLED, task)
+            await self.memory.save_task(task)
+            raise
+
+    async def _run_task_body(self, task: Task, objective: str) -> Task:
         await self._transition(task, "PLANNING")
 
         try:

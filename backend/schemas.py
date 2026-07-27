@@ -44,6 +44,10 @@ class TaskMutationResponse(BaseModel):
     deleted: bool = False
 
 
+class ClearHistoryResponse(BaseModel):
+    deleted_count: int
+
+
 class SettingsModel(BaseModel):
     model: str = "ollama/qwen3-vl:30b-a3b"
     thinking_level: str = "low"

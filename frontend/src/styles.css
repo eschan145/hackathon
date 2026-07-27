@@ -408,8 +408,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .field-row select { min-width: 150px; height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .settings-actions { display: flex; align-items: center; gap: 14px; }
 .btn-primary { min-height: 46px; padding: 0 18px; border-radius: 9px; background: var(--indigo); color: white; font-weight: 500; }
+.btn-danger { min-height: 40px; padding: 0 16px; border: 1px solid var(--failure); border-radius: 9px; background: transparent; color: var(--failure); font-weight: 500; }
+.btn-danger:hover:not(:disabled) { background: var(--failure-soft); }
+.btn-danger:disabled { opacity: .5; }
 .save-status { color: var(--success); font-size: 14px; }
 .save-status.err { color: var(--failure); }
+.danger-zone .setting-intro h2 { color: var(--failure); }
 .banner.subtle { margin-bottom: 14px; color: var(--muted); }
 
 /* Modal and onboarding */

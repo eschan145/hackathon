@@ -99,12 +99,13 @@ class EpisodicMemory:
         )
         self._collection_name = collection_name
         self._collection = None
+        self._client = None
         self._fallback: list[dict[str, Any]] = []  # used when chromadb unavailable
 
         if _HAS_CHROMADB:
             self._persist_dir.mkdir(parents=True, exist_ok=True)
-            client = chromadb.PersistentClient(path=str(self._persist_dir))
-            self._collection = client.get_or_create_collection(self._collection_name)
+            self._client = chromadb.PersistentClient(path=str(self._persist_dir))
+            self._collection = self._client.get_or_create_collection(self._collection_name)
 
     def add_workflow(
         self,
@@ -145,6 +146,19 @@ class EpisodicMemory:
             self._collection.delete(where={"task_id": task_id})
         else:
             self._fallback = [entry for entry in self._fallback if entry["task_id"] != task_id]
+
+    def delete_all(self) -> None:
+        """Wipe every cached workflow entry (used by "clear all history").
+
+        Chroma's `.delete()` needs a non-empty `where`/`ids` filter, so
+        there's no single call that means "delete everything" - dropping
+        and recreating the collection is the standard way to clear it.
+        """
+        if self._client is not None:
+            self._client.delete_collection(self._collection_name)
+            self._collection = self._client.get_or_create_collection(self._collection_name)
+        else:
+            self._fallback = []
 
     def find_similar(
         self,

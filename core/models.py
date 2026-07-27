@@ -33,6 +33,7 @@ TaskState = Literal[
     "REPLANNING",
     "COMPLETED",
     "FAILED",
+    "CANCELLED",
     "AWAITING_APPROVAL",
 ]
 

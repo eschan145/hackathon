@@ -31,6 +31,7 @@ class EventType(str, Enum):
     REPLANNED = "replanned"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    TASK_CANCELLED = "task_cancelled"
     APPROVAL_REQUIRED = "approval_required"
 
 

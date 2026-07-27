@@ -18,11 +18,12 @@ const DEFAULT_SETTINGS: SettingsPayload = {
 const THINKING_LEVEL_OPTIONS = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max"];
 
 export default function Settings() {
-  const { approvalMode, setApprovalMode } = useStore();
+  const { approvalMode, setApprovalMode, tasks, clearAllTasks } = useStore();
   const [settings, setSettings] = useState<SettingsPayload>(DEFAULT_SETTINGS);
   const [newDir, setNewDir] = useState("");
   const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [overlay, setOverlay] = useState(() => ({
     enabled: localStorage.getItem("orchestratr.overlay.enabled") !== "false",
     edge: (localStorage.getItem("orchestratr.overlay.edge") === "left" ? "left" : "right") as "left" | "right",
@@ -52,6 +53,24 @@ export default function Settings() {
       setStatus({ kind: "ok", text: "Settings saved." });
     } catch (error) {
       setStatus({ kind: "err", text: error instanceof Error ? `Failed to save: ${error.message}` : "Failed to save settings." });
+    }
+  }
+
+  async function deleteAllChats() {
+    const count = tasks.length;
+    if (count === 0) return;
+    const confirmed = window.confirm(
+      `Delete all ${count} chat${count === 1 ? "" : "s"}? This permanently removes every task, its conversation, and cached workflow history. This can't be undone.`,
+    );
+    if (!confirmed) return;
+    setClearing(true);
+    try {
+      const deleted = await clearAllTasks();
+      setStatus({ kind: "ok", text: `Deleted ${deleted} chat${deleted === 1 ? "" : "s"}.` });
+    } catch (error) {
+      setStatus({ kind: "err", text: error instanceof Error ? `Failed to delete chats: ${error.message}` : "Failed to delete chats." });
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -87,6 +106,15 @@ export default function Settings() {
             <label className="field-row"><span><strong>Screen edge</strong><small>Choose where the hidden trigger appears.</small></span><select value={overlay.edge} onChange={(event) => setOverlay((value) => ({ ...value, edge: event.target.value as "left" | "right" }))}><option value="right">Right</option><option value="left">Left</option></select></label>
             <label className="field-row"><span><strong>Activation delay</strong><small>Prevents accidental opening.</small></span><select value={overlay.delay} onChange={(event) => setOverlay((value) => ({ ...value, delay: Number(event.target.value) }))}><option value={150}>Fast · 150ms</option><option value={350}>Balanced · 350ms</option><option value={650}>Relaxed · 650ms</option></select></label>
             <label className="toggle-row"><span><strong>Launch at login</strong><small>Keep Orchestratr available in the menu bar.</small></span><input type="checkbox" checked={overlay.launchAtLogin} onChange={(event) => setOverlay((value) => ({ ...value, launchAtLogin: event.target.checked }))} /></label>
+          </div>
+        </section>
+        <section className="setting-block danger-zone">
+          <div className="setting-intro"><div><h2>Danger zone</h2><p>Irreversible actions.</p></div></div>
+          <div className="toggle-row">
+            <span><strong>Delete all chats</strong><small>Permanently removes every task, its conversation, and cached workflow history ({tasks.length} chat{tasks.length === 1 ? "" : "s"} right now).</small></span>
+            <button className="btn-danger" onClick={() => void deleteAllChats()} disabled={clearing || tasks.length === 0}>
+              {clearing ? "Deleting…" : "Delete all chats"}
+            </button>
           </div>
         </section>
         <div className="settings-actions"><button className="btn-primary" onClick={save}>Save changes</button>{status && <span className={`save-status ${status.kind}`}>{status.text}</span>}</div>

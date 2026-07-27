@@ -68,6 +68,7 @@ interface StoreValue {
   cancelTask: (taskId: string) => Promise<void>;
   completeTask: (taskId: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  clearAllTasks: () => Promise<number>;
   restartTask: (taskId: string) => Promise<string>;
   taskTitles: Record<string, string>;
   titleFor: (task: TaskRecord) => string;
@@ -427,6 +428,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           refresh();
           break;
         }
+        case "task_cancelled": {
+          // The real, backend-confirmed cancellation - supersedes the
+          // optimistic "FAILED" patch cancelTask() applies immediately on
+          // click (see below), which fires before the orchestrator has
+          // actually unwound and can't know whether cancellation truly
+          // took effect.
+          patchTask(taskId, { state: "CANCELLED" });
+          setApprovals((prev) => ({ ...prev, [taskId]: undefined }));
+          refresh();
+          break;
+        }
         default:
           break;
       }
@@ -453,7 +465,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const cancelTask = useCallback(
     async (taskId: string) => {
       await api.cancelTask(taskId);
-      patchTask(taskId, { state: "FAILED" });
+      // Optimistic - the orchestrator hasn't actually unwound yet at this
+      // point (it may be mid-await on a model call), so this is a guess.
+      // The "task_cancelled" websocket event (emitted once
+      // core/orchestrator.py's run_task actually catches the
+      // CancelledError and persists it) is what makes this authoritative.
+      patchTask(taskId, { state: "CANCELLED" });
       pushReasoning(taskId, "Cancelled", "Run stopped from the UI.");
     },
     [patchTask, pushReasoning],
@@ -491,6 +508,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { [taskId]: _removed, ...remaining } = prev;
       return remaining;
     });
+  }, []);
+
+  const clearAllTasks = useCallback(async () => {
+    const { deleted_count } = await api.clearAllTasks();
+    setTasks([]);
+    setApprovals({});
+    setReasoning({});
+    setChat({});
+    setTaskTitles({});
+    setNotifications([]);
+    return deleted_count;
   }, []);
 
   const restartTask = useCallback(
@@ -610,6 +638,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     cancelTask,
     completeTask,
     deleteTask,
+    clearAllTasks,
     restartTask,
     taskTitles,
     titleFor,

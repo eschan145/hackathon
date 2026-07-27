@@ -103,6 +103,22 @@ class MemoryStore:
         self._episodic.delete_workflow(task_id)
         return cursor.rowcount > 0
 
+    async def delete_all_tasks(self) -> int:
+        """Permanently remove every persisted task, chat, and workflow-cache
+        entry. Returns the number of task rows deleted.
+
+        Callers (backend/main.py) are responsible for cancelling any
+        still-running asyncio task first - deleting rows out from under a
+        running Orchestrator loop wouldn't stop it, and its next
+        save_task() would just re-insert the row via the upsert in
+        save_task() above.
+        """
+        with self._conn:
+            self._conn.execute("DELETE FROM conversation_messages")
+            cursor = self._conn.execute("DELETE FROM tasks")
+        self._episodic.delete_all()
+        return cursor.rowcount
+
     async def list_recent_tasks(self, limit: int = 20) -> list[Task]:
         rows = self._conn.execute(
             "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)

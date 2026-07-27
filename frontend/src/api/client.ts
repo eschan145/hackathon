@@ -28,6 +28,7 @@ export type TaskState =
   | "REPLANNING"
   | "COMPLETED"
   | "FAILED"
+  | "CANCELLED"
   | "AWAITING_APPROVAL"
   | string;
 
@@ -212,6 +213,9 @@ export const api = {
   },
   deleteTask(taskId: string): Promise<{ deleted: boolean }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+  },
+  clearAllTasks(): Promise<{ deleted_count: number }> {
+    return request("/api/tasks", { method: "DELETE" });
   },
   getConversation(taskId: string): Promise<{ messages: ConversationMessagePayload[] }> {
     return request(`/api/tasks/${encodeURIComponent(taskId)}/conversation`);
