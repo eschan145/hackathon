@@ -19,7 +19,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at REAL,
     graph_json TEXT,
     history_json TEXT,
+    contract_json TEXT,
+    procedure_candidate_json TEXT,
     success INTEGER
 );
 
@@ -85,6 +87,16 @@ CREATE TABLE IF NOT EXISTS shopping_preferences (
 CREATE TABLE IF NOT EXISTS browser_preferences (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS procedures (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    source_task_id TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
 );
 """
 
@@ -118,8 +130,19 @@ def init_db(conn: sqlite3.Connection) -> None:
     """
     with conn:
         conn.executescript(_DDL)
+        _ensure_column(conn, "tasks", "contract_json", "TEXT")
+        _ensure_column(conn, "tasks", "procedure_candidate_json", "TEXT")
         row = conn.execute("SELECT version FROM schema_meta LIMIT 1").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_meta (version) VALUES (?)", (SCHEMA_VERSION,))
         elif row["version"] < SCHEMA_VERSION:
             conn.execute("UPDATE schema_meta SET version = ?", (SCHEMA_VERSION,))
+
+
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, declaration: str
+) -> None:
+    """Add a column for existing databases; CREATE TABLE only helps new ones."""
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")

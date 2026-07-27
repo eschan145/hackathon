@@ -51,6 +51,7 @@ export default function Chat() {
   const [notFound, setNotFound] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [procedureBusy, setProcedureBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasMounted = useRef(false);
   const now = useNow(500);
@@ -138,6 +139,17 @@ export default function Chat() {
       });
     } finally {
       setSending(false);
+    }
+  }
+
+  async function decideProcedure(save: boolean) {
+    if (procedureBusy) return;
+    setProcedureBusy(true);
+    try {
+      await api.decideProcedure(taskId, save);
+      await refresh();
+    } finally {
+      setProcedureBusy(false);
     }
   }
 
@@ -265,6 +277,26 @@ export default function Chat() {
                   <h2>Your task is ready</h2>
                   <p>{activity[activity.length - 1]?.detail || `${done} steps completed and checked.`}</p>
                 </div>
+              </section>
+            )}
+
+            {task.procedure_candidate?.status === "offered" && (
+              <section className="procedure-card">
+                <div>
+                  <small>Reusable procedure</small>
+                  <h2>Save “{task.procedure_candidate.name}”?</h2>
+                  <p>{task.procedure_candidate.description}</p>
+                </div>
+                <div className="approval-actions">
+                  <button className="secondary-button" disabled={procedureBusy} onClick={() => void decideProcedure(false)}>Not now</button>
+                  <button className="primary-button" disabled={procedureBusy} onClick={() => void decideProcedure(true)}>Save procedure</button>
+                </div>
+              </section>
+            )}
+
+            {task.procedure_candidate?.status === "saved" && (
+              <section className="procedure-card saved">
+                <div><small>Procedure saved</small><h2>{task.procedure_candidate.name}</h2><p>This verified path is now in the local procedure library.</p></div>
               </section>
             )}
           </div>

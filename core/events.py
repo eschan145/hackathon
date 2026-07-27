@@ -33,6 +33,8 @@ class EventType(str, Enum):
     TASK_FAILED = "task_failed"
     TASK_CANCELLED = "task_cancelled"
     APPROVAL_REQUIRED = "approval_required"
+    PROCEDURE_OFFERED = "procedure_offered"
+    PROCEDURE_UPDATED = "procedure_updated"
 
 
 @dataclass

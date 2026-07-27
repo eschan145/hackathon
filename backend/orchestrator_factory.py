@@ -22,7 +22,7 @@ import shutil
 from typing import Any, Optional
 
 from core.event_bus import EventBus
-from core.models import Task, TaskGraph
+from core.models import ProcedureCandidate, Task, TaskGraph
 from core.orchestrator import Orchestrator
 from execution.executor import ActionExecutor
 from planning.vision_agent_planner import VisionAgentPlanner
@@ -72,6 +72,20 @@ class _StubMemory:
         if not any(existing["id"] == message_id for existing in messages):
             messages.append(message)
         return message
+
+    async def save_procedure(self, task: Task) -> ProcedureCandidate:
+        if task.procedure_candidate is None:
+            raise ValueError("Task has no procedure candidate")
+        task.procedure_candidate.status = "saved"
+        await self.save_task(task)
+        return task.procedure_candidate
+
+    async def dismiss_procedure(self, task: Task) -> ProcedureCandidate:
+        if task.procedure_candidate is None:
+            raise ValueError("Task has no procedure candidate")
+        task.procedure_candidate.status = "dismissed"
+        await self.save_task(task)
+        return task.procedure_candidate
 
     def list_recent_tasks(self, limit: int = 25) -> list[Task]:
         return sorted(self._tasks.values(), key=lambda t: t.created_at, reverse=True)[:limit]

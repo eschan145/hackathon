@@ -351,6 +351,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .completion-card { margin-top: 26px; padding: 20px; display: flex; gap: 12px; border: 1px solid #bad6c6; border-radius: 12px; background: var(--success-soft); color: var(--success); }
 .completion-card p { margin-top: 5px; color: var(--navy-2); }
 .completion-card small { color: var(--success); }
+.procedure-card { margin-top: 14px; padding: 20px; border: 1px solid #c8c8ea; border-radius: 12px; background: var(--indigo-soft); }
+.procedure-card small { color: var(--indigo); font-size: 12px; font-weight: 500; }
+.procedure-card h2 { margin-top: 3px; font-size: 19px; }
+.procedure-card p { margin-top: 6px; color: var(--navy-2); font-size: 14px; }
+.procedure-card .approval-actions { margin-top: 16px; }
+.procedure-card.saved { border-color: #bad6c6; background: var(--success-soft); }
+.procedure-card.saved small { color: var(--success); }
 .conversation-composer { flex: 0 0 auto; padding: 14px max(24px, calc((100% - 760px) / 2)); display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--border); background: var(--surface); }
 .conversation-input { min-width: 0; min-height: 50px; flex: 1; display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
 .conversation-input:focus-within { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(86,88,201,.1); }
@@ -407,6 +414,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .toggle-row input { width: 44px; height: 24px; accent-color: var(--indigo); }
 .field-row select { min-width: 150px; height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .settings-actions { display: flex; align-items: center; gap: 14px; }
+.routing-field { margin-top: 16px; display: block; }
+.routing-field > span { display: flex; flex-direction: column; }
+.routing-field small { color: var(--muted); font-size: 13px; }
+.routing-field textarea { width: 100%; margin-top: 8px; padding: 11px 12px; resize: vertical; border: 1px solid var(--border); border-radius: 8px; background: var(--canvas); font-size: 14px; line-height: 1.45; }
+.routing-field textarea:focus { border-color: var(--indigo); }
 .btn-primary { min-height: 46px; padding: 0 18px; border-radius: 9px; background: var(--indigo); color: white; font-weight: 500; }
 .btn-danger { min-height: 40px; padding: 0 16px; border: 1px solid var(--failure); border-radius: 9px; background: transparent; color: var(--failure); font-weight: 500; }
 .btn-danger:hover:not(:disabled) { background: var(--failure-soft); }

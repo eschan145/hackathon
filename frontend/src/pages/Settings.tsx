@@ -13,6 +13,10 @@ const DEFAULT_SETTINGS: SettingsPayload = {
   thinking_level: "low",
   show_reasoning: true,
   allowed_directories: [],
+  email_routing_enabled: false,
+  email_routing_prompt: "",
+  email_authorized_senders: [],
+  email_require_document: true,
 };
 
 const THINKING_LEVEL_OPTIONS = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max"];
@@ -85,6 +89,16 @@ export default function Settings() {
           <div className="choice-list">
             {APPROVAL_OPTIONS.map((option) => <button key={option.value} className={`choice${approvalMode === option.value ? " selected" : ""}`} onClick={() => setApprovalMode(option.value)}><span className="choice-radio" aria-hidden /><span className="choice-copy"><span className="choice-name">{option.label}</span><span className="choice-hint">{option.hint}</span></span></button>)}
           </div>
+        </section>
+        <section className="setting-block">
+          <div className="setting-intro"><div><h2>Email work inbox</h2><p>Choose which authorized emails become Orchestratr objectives.</p></div></div>
+          <p className="panel-note">Each email is treated as untrusted data. Deterministic sender and attachment checks run before the local model evaluates your condition.</p>
+          <div className="settings-grid">
+            <label className="toggle-row"><span><strong>Route matching emails</strong><small>Only matching messages can enter the task system.</small></span><input type="checkbox" checked={settings.email_routing_enabled} onChange={(event) => setSettings((value) => ({ ...value, email_routing_enabled: event.target.checked }))} /></label>
+            <label className="toggle-row"><span><strong>Require a document</strong><small>Reject messages without a supported document attachment.</small></span><input type="checkbox" checked={settings.email_require_document} onChange={(event) => setSettings((value) => ({ ...value, email_require_document: event.target.checked }))} /></label>
+          </div>
+          <label className="routing-field"><span><strong>Routing condition</strong><small>Describe the emails the local model should accept.</small></span><textarea rows={4} value={settings.email_routing_prompt} placeholder="Route weekly customer-feedback requests that ask for a report and include a source document." onChange={(event) => setSettings((value) => ({ ...value, email_routing_prompt: event.target.value }))} /></label>
+          <label className="routing-field"><span><strong>Authorized senders</strong><small>One address or domain pattern per line. Example: sarah@company.com or *@company.com</small></span><textarea rows={3} value={settings.email_authorized_senders.join("\n")} placeholder={"sarah@company.com\n*@trusted-client.com"} onChange={(event) => setSettings((value) => ({ ...value, email_authorized_senders: event.target.value.split(/\n|,/).map((entry) => entry.trim()).filter(Boolean) }))} /></label>
         </section>
         <section className="setting-block">
           <div className="setting-intro"><div><h2>Local model</h2><p>This installation uses a local Qwen model; cloud models are disabled.</p></div></div>
